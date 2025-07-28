@@ -12,7 +12,7 @@ MX_FIX,  MX_DEF    = 20, 0
 GATE_FEE = 500
 MX_FIX_COST = 300
 MX_PENALTY  = 1000
-MX_PEN_PROB = 0.4
+MX_PEN_PROB = 0.4  # 40 % chance of penalty when deferring
 
 EVENT_CARDS = [
     ("Wildlife on the runway - shooing birds takes time!", 8),
@@ -90,7 +90,7 @@ def sidebar(role,rnd):
     st.sidebar.header(f"Round {rnd} - {role}")
     st.sidebar.text(
         f"Goal <= {ON_TIME_MIN} min\n"
-        f"Late fine ${FINE_PER_MIN}/min (to you)\n"
+        f"Late fine ${FINE_PER_MIN}/min to YOU\n"
         f"Gate fee ${GATE_FEE}\n"
         f"Fix-now ${MX_FIX_COST}\n"
         f"Defer risk 40% -> ${MX_PENALTY}"
@@ -104,10 +104,9 @@ def sidebar(role,rnd):
 
 def kpi_strip(role):
     my_cost = st.session_state.data[role]["Cost"].sum()
-    col1,col2 = st.columns(2)
-    col1.metric("Your Cost", f"${int(my_cost):,}")
-    col2.metric("Latest Ground Time", f"{latest_time()} min",
-                delta=f"{latest_time()-ON_TIME_MIN:+}")
+    st.metric("Your Cost", f"${int(my_cost):,}")
+    st.metric("Latest Ground Time", f"{latest_time()} min",
+              delta=f"{latest_time()-ON_TIME_MIN:+}")
 
 def opts(role):
     return ("Private Gate","Shared Gate") if role==ROLES[0] else \
@@ -122,32 +121,30 @@ tab_help, tab_play = st.tabs(["How to Play","Play"])
 with tab_help:
     st.header("Your Mission")
     st.markdown(
-        "Five inbound jets are late. For **each round** you will choose an option for "
-        "all three ground roles, then watch how those choices snowball. "
-        "Every minute past 45 adds a **$100 fine to your own ledger**. "
-        "Finish the fifth round with the smallest bill and you win."
+        "Five inbound jets are late. Pick options for **all three roles each round**, "
+        "turn the planes fast, and keep your personal spend low. "
+        "Every minute beyond 45 slaps **you** with a $100 fine."
     )
-    st.subheader("Round sequence (what you do)")
+    st.subheader("What happens each round")
     st.markdown(
-        "1. Pick a Gate plan for **Airport Ops**.\n"
-        "2. Pick a Crew plan for **Airline Control**.\n"
-        "3. Pick a Fix or Defer choice for **Maintenance**.\n"
-        "4. Hit **Submit Decision**.\n"
-        "5. Timeline updates; next round begins."
+        "1. Choose for **Airport Ops**, **Airline Control**, and **Maintenance**.\n"
+        "2. Click **Submit Decision**.\n"
+        "3. Timeline shows the ripple effect.\n"
+        "4. Repeat for five rounds — lowest total dollars wins."
     )
     st.header("Roles & Options")
     st.markdown(
-        "- Airport Ops – ramps, loaders, and rogue seagulls.\n"
-        "  - Private Gate – pay $500, zero conflict.\n"
-        "  - Shared Gate – free, 50 % chance of a +10-minute clash.\n\n"
-        "- Airline Control – dispatch desk juggling crew calls.\n"
-        "  - No Buffer – quick swap, 40 % chance of a +15-minute delay.\n"
-        "  - Buffer 10 – safer, always costs 10 extra minutes.\n\n"
-        "- Aircraft Maintenance – wrench wizards.\n"
-        "  - Fix Now – add 20 min, pay $300.\n"
-        "  - Defer – 0 min now, 40 % chance of a $1 000 penalty later."
+        "- *Airport Operations – Ramp Ringleader*\n"
+        "  - Private Gate: pay $500, zero conflict.\n"
+        "  - Shared Gate: free, **50 % chance** of +10-min clash.\n\n"
+        "- *Airline Control Center – Dispatch DJ*\n"
+        "  - No Buffer: fast, **40 % chance** of +15-min crew delay.\n"
+        "  - Buffer 10: safe, always +10 min.\n\n"
+        "- *Aircraft Maintenance – Wrench Wizard*\n"
+        "  - Fix Now: +20 min, pay $300.\n"
+        "  - Defer: 0 min now, **40 % chance** of $1 000 penalty."
     )
-    st.markdown(f"*Delay past {ON_TIME_MIN} minutes costs **you** ${FINE_PER_MIN} per minute.*")
+    st.markdown(f"*Delay past {ON_TIME_MIN} min costs **you** ${FINE_PER_MIN} per minute.*")
 
 with tab_play:
     rnd=st.session_state.round
@@ -164,14 +161,16 @@ with tab_play:
     else: st.info("Decision already submitted")
 
     st.subheader("Your Ledger")
-    st.dataframe(st.session_state.data[role].drop(columns="Round"), height=200)
+    st.dataframe(st.session_state.data[role].drop(columns="Round"))
 
     st.subheader("Timeline Board")
     board=st.session_state.timeline[rnd-1]
-    st.dataframe(board) if board is not None else st.info("Waiting for remaining roles...")
+    st.dataframe(board) if board is not None else st.info("Waiting for other roles...")
 
     if all(b is not None for b in st.session_state.timeline):
         st.balloons(); st.success("GAME OVER")
-        summary=pd.DataFrame({"Role":ROLES,
-                              "Total $":[int(st.session_state.data[r]['Cost'].sum()) for r in ROLES]})
-        st.table(summary.sort_values("Total $").reset_index(drop=True))
+        summary=pd.DataFrame({
+            "Role":ROLES,
+            "Total $":[int(st.session_state.data[r]['Cost'].sum()) for r in ROLES]
+        }).sort_values("Total $").reset_index(drop=True)
+        st.table(summary)
