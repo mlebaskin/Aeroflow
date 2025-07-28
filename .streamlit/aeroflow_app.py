@@ -1,8 +1,8 @@
-"""MMIS 494 Aviation MIS Simulation – Integrated Timeline (v1.2)
+"""MMIS 494 Aviation MIS Simulation – Integrated Timeline (v1.3)
 
-• Spicy, story-style event cards
-• Top-of-screen KPI meters (money + time) – always visible
-• Simplified page (no bar charts) so the live numbers pop
+Adds:
+• Loud GAME-OVER recap with role ledgers + team totals
+• Notes column shown during play (penalty / no-penalty, clashes, etc.)
 """
 
 import random
@@ -11,14 +11,12 @@ from typing import Dict, List
 import pandas as pd
 import streamlit as st
 
-# ────────── Config ────────── #
+# ───────── Config ───────── #
 ROLES = ["Airport_Ops", "Airline_Control", "Maintenance"]
 ROUNDS = 5
-
 ON_TIME_MIN = 45
 FINE_PER_MIN = 100
 
-# Baseline task times (minutes)
 AIRPORT_PRIVATE = 10
 AIRPORT_SHARED = 10
 CREW_NO_BUFFER = 30
@@ -26,27 +24,25 @@ CREW_BUFFER_10 = 40
 MX_FIX = 20
 MX_DEFER = 0
 
-# Costs
 GATE_FEE = 500
 MX_FIX_COST = 300
 MX_PENALTY = 1000
-MX_PENALTY_PROB = 0.4  # 40 %
+MX_PENALTY_PROB = 0.4
 
-# Big-personality events (text, delay)
 EVENT_CARDS = [
-    ("Yikes! Wildlife is having a picnic on the runway – shooing birds takes time!", 8),
-    ("Fuel truck hit gridlock! The driver’s listening to traffic radio instead of refueling you.", 12),
-    ("Half the ground crew called in sick. The remaining team is hustling double-time.", 9),
-    ("Snow squall! De-icing trucks roll in and coat the jet in minty glycol goodness.", 15),
-    ("Oh no! The baggage belt jammed and suitcases are raining onto the ramp.", 7),
-    ("Blackout! Gate power just fizzled – lights out until maintenance flips a breaker.", 10),
-    ("Disaster! Soup spilled from the catering cart – dozens of bags now bathed in tomato bisque.", 6),
-    ("Lightning dance overhead – ramp ops halt until Mother Nature calms down.", 11),
+    ("Yikes! Wildlife picnic on the runway—bird-shooing takes time!", 8),
+    ("Fuel truck hit gridlock—driver’s still downtown!", 12),
+    ("Half the ground crew called in sick—slow going.", 9),
+    ("Snow squall—de-icing trucks coat the jet in minty glycol.", 15),
+    ("Baggage belt jam—suitcases raining onto the ramp!", 7),
+    ("Power outage! Gate lights go dark until a breaker flips.", 10),
+    ("Disaster! Catering cart dumps tomato soup on bags.", 6),
+    ("Lightning dance overhead—ramp ops halt until clear.", 11),
 ]
 
 INSTRUCTOR_PW = st.secrets.get("INSTRUCTOR_PW", "flight123")
 
-# ────────── Helpers ────────── #
+# ───────── Helpers ───────── #
 def init_state():
     if "round_data" not in st.session_state:
         st.session_state.round_data = {
@@ -67,12 +63,10 @@ def init_state():
         st.session_state.kpi = pd.DataFrame(index=ROLES,
                                             columns=["Delay", "Cost"]).fillna(0)
 
-def decisions_done(idx):  # all roles decided this round?
-    return all(st.session_state.round_data[r].at[idx, "Decision"] != "-"
-               for r in ROLES)
+def all_decided(idx):
+    return all(st.session_state.round_data[r].at[idx, "Decision"] != "-" for r in ROLES)
 
 def build_timeline(idx):
-    # Build sequential board & shared fine
     start = 0
     rows = []
     evt_text, evt_delay = st.session_state.events[idx]
@@ -82,15 +76,14 @@ def build_timeline(idx):
     rows.append(["Airport_Ops", start, ap_end])
 
     al = st.session_state.round_data["Airline_Control"].loc[idx]
-    al_start, al_end = ap_end, ap_end + al.Duration
-    rows.append(["Airline_Control", al_start, al_end])
+    al_end = ap_end + al.Duration
+    rows.append(["Airline_Control", ap_end, al_end])
 
     mx = st.session_state.round_data["Maintenance"].loc[idx]
-    mx_start, mx_end = al_end, al_end + mx.Duration
-    rows.append(["Maintenance", mx_start, mx_end])
+    mx_end = al_end + mx.Duration
+    rows.append(["Maintenance", al_end, mx_end])
 
-    board = pd.DataFrame(rows, columns=["Role", "Start", "End"])
-    st.session_state.timeline[idx] = board
+    st.session_state.timeline[idx] = pd.DataFrame(rows, columns=["Role", "Start", "End"])
 
     extra = max(mx_end - ON_TIME_MIN, 0)
     fine = extra * FINE_PER_MIN
@@ -98,7 +91,7 @@ def build_timeline(idx):
         for r in ROLES:
             st.session_state.round_data[r].at[idx, "Cost"] += fine / 3
 
-    # Update cumulative KPI
+    # update KPI
     for r in ROLES:
         df = st.session_state.round_data[r]
         st.session_state.kpi.at[r, "Delay"] = df["Duration"].sum()
@@ -123,7 +116,7 @@ def record(role, idx, decision):
                 note += " (+15 late crew)"
         else:
             dur, cost, note = CREW_BUFFER_10, 0, "Buffer 10"
-    else:  # Maintenance
+    else:
         if decision == "Fix Now":
             dur, cost, note = MX_FIX, MX_FIX_COST, "Fixed now"
         else:
@@ -134,12 +127,17 @@ def record(role, idx, decision):
             else:
                 note += " – No penalty"
 
-    df.loc[idx, ["Decision", "Duration", "Cost", "Notes"]] = [decision,
-                                                              dur, cost, note]
+    df.loc[idx, ["Decision", "Duration", "Cost", "Notes"]] = [decision, dur, cost, note]
 
-    if decisions_done(idx):
+    if all_decided(idx):
         build_timeline(idx)
         st.session_state.current_round = min(idx + 2, ROUNDS)
+
+def latest_ground_time():
+    for board in reversed(st.session_state.timeline):
+        if board is not None:
+            return board["End"].max()
+    return 0
 
 def game_over():
     if st.session_state.current_round < ROUNDS:
@@ -147,50 +145,49 @@ def game_over():
     return all("-" not in df["Decision"].values for df in
                st.session_state.round_data.values())
 
-# ────────── UI components ────────── #
+# ───────── UI pieces ───────── #
 def kpi_meters():
     total_cost = st.session_state.kpi["Cost"].sum()
-    total_delay = st.session_state.timeline[st.session_state.current_round - 2]["End"].max() if st.session_state.timeline[st.session_state.current_round - 2] is not None else 0
     col1, col2 = st.columns(2)
-    col1.metric("💸 Team Cost so far", f"${total_cost:,.0f}")
-    col2.metric("⏱️ Ground Time this round",
-                f"{total_delay} min", delta=f"{total_delay - ON_TIME_MIN:+}")
+    col1.metric("💸 Team Cost", f"${total_cost:,.0f}")
+    col2.metric("⏱️ Last Ground Time",
+                f"{latest_ground_time()} min",
+                delta=f"{latest_ground_time() - ON_TIME_MIN:+}")
 
-def sidebar(role, round_num):
+def sidebar(role, rnd):
     st.sidebar.header("Game Facts")
     st.sidebar.markdown(
         f"- On-time goal: **{ON_TIME_MIN} min**\n"
-        f"- Delay fine: **${FINE_PER_MIN}/min**\n"
-        f"- Private gate fee: **${GATE_FEE}**\n"
-        f"- Fix-now cost: **${MX_FIX_COST}**\n"
-        f"- Defer penalty: **${MX_PENALTY}** (40 % risk)"
+        f"- Delay fine: **${FINE_PER_MIN}/min** over goal\n"
+        f"- Gate fee: **${GATE_FEE}** • Fix-now: **${MX_FIX_COST}**\n"
+        f"- Defer risk: **40 % → ${MX_PENALTY}**"
     )
     with st.sidebar.expander("Instructor"):
-        pw = st.text_input("Pwd", type="password", key="pw")
+        pw = st.text_input("Pwd", type="password")
         if pw == INSTRUCTOR_PW:
-            if st.button("Next Round"):
-                st.session_state.current_round = min(round_num + 1, ROUNDS)
+            if st.button("Skip to Next Round"):
+                st.session_state.current_round = min(rnd + 1, ROUNDS)
                 st.rerun()
             if st.button("Reset Game"):
-                for k in list(st.session_state.keys()):
-                    del st.session_state[k]
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
                 st.rerun()
 
-def decision_ui(role, idx):
+def decision_widget(role, idx):
     if role == "Airport_Ops":
-        opt = st.radio("Gate choice",
-                       ["Private Gate", "Shared Gate"])
+        choice = st.radio("Gate choice",
+                          ["Private Gate", "Shared Gate"])
     elif role == "Airline_Control":
-        opt = st.radio("Crew choice",
-                       ["No Buffer", "Buffer 10"])
+        choice = st.radio("Crew choice",
+                          ["No Buffer", "Buffer 10"])
     else:
-        opt = st.radio("Maintenance",
-                       ["Fix Now", "Defer"])
+        choice = st.radio("Maintenance choice",
+                          ["Fix Now", "Defer"])
     if st.button("Submit"):
-        record(role, idx, opt)
+        record(role, idx, choice)
         st.rerun()
 
-# ────────── Main app ────────── #
+# ───────── Main app ───────── #
 def main():
     st.set_page_config(page_title="MMIS 494 Aviation MIS Simulation",
                        page_icon="🛫", layout="wide")
@@ -200,13 +197,13 @@ def main():
     tab_play, tab_guide = st.tabs(["Play the Game", "How to Play"])
 
     with tab_guide:
-        st.header("How to Play")
+        st.header("Quick Rules")
         st.markdown(
-            """
-1. **Choose** an option for your role each round.  
-2. Tasks run in order: *Airport ➜ Airline ➜ Maintenance*.  
-3. If total ground time > 45 min, everyone shares the delay fine.  
-4. Lowest total cost after 5 rounds wins.
+            f"""
+1. Each round pick an option for your role.  
+2. Tasks run **Airport → Airline → Maintenance**.  
+3. If total ground time > {ON_TIME_MIN} min, everyone shares the delay fine.  
+4. Lowest total cost after {ROUNDS} rounds wins.
 """
         )
 
@@ -221,23 +218,41 @@ def main():
         st.warning(f"{evt_text}\n\n*(+{evt_delay} min)*")
 
         if st.session_state.round_data[role].at[rnd - 1, "Decision"] == "-":
-            decision_ui(role, rnd - 1)
+            decision_widget(role, rnd - 1)
         else:
-            st.info("Decision already submitted.")
+            st.info("You already submitted.")
 
-        st.markdown("### Round Timeline")
-        if st.session_state.timeline[rnd - 1] is not None:
-            st.dataframe(st.session_state.timeline[rnd - 1])
+        st.markdown("#### Your Role Ledger")
+        st.dataframe(st.session_state.round_data[role]
+                     .drop(columns="Round"), height=200)
+
+        st.markdown("#### Round Timeline")
+        board = st.session_state.timeline[rnd - 1]
+        if board is not None:
+            st.dataframe(board)
         else:
-            st.info("Waiting for all roles…")
+            st.info("Waiting for other roles…")
 
         if game_over():
-            st.success("🎉 Game Over")
-            total_cost = st.session_state.kpi["Cost"].sum()
-            total_delay = st.session_state.timeline[-1]["End"].max()
-            st.metric("Final Cost", f"${total_cost:,.0f}")
-            st.metric("Final Ground Time", f"{total_delay} min")
+            st.balloons()
+            st.success("🏁 GAME OVER – Final Results")
+            for r in ROLES:
+                st.write(f"##### {r}")
+                st.dataframe(st.session_state.round_data[r]
+                             .style.format({\"Cost\": \"${:,.0f}\"}))
+            total_cost = st.session_state.kpi[\"Cost\"].sum()
+            final_time = st.session_state.timeline[-1][\"End\"].max()
+            st.info(f\"**Team Cost:** ${total_cost:,.0f}   |   "
+                    f\"**Ground Time:** {final_time} min\")
 
+if __name__ == \"__main__\":\n    main()\n```
 
-if __name__ == "__main__":
-    main()
+### What’s back + new
+
+* **Notes column** visible while playing (penalty hits, clashes, etc.).
+* **Obvious GAME OVER** banner (confetti balloons 🎈) with each role’s ledger and final team totals.
+* **KPI meters** stay at top, no scrolling.
+* Event cards keep their new dramatic flair.
+
+Push → commit → rerun and you should have personality *and* clarity.
+::contentReference[oaicite:0]{index=0}
