@@ -128,12 +128,12 @@ st.title("🛫 MMIS 494 Aviation MIS Simulation")
 
 tab_help, tab_play = st.tabs(["How to Play","Play"])
 
-# ----- HOW TO PLAY TAB (restored wording) -----
+# ----- HOW TO PLAY TAB (approved wording) -----
 with tab_help:
     st.header("Your Mission")
     st.markdown(
-        "Turn five delayed flights as fast and cheap as you can.  \n"
-        "For each flight, you will update three information systems: AODB gate allocation, CRS crew plan, and MEL defect log.  \n"
+        "Turn five delayed flights fast and cheap.  \n"
+        "Each flight you update three information systems: AODB gate allocation, CRS crew plan, and MEL defect log.  \n"
         "Perfect ground time is 45 minutes; every extra minute costs $100.  \n"
         "Spend money to avoid time—or gamble and hope delays stay short."
     )
@@ -156,8 +156,9 @@ with tab_help:
 
 # ----- PLAY TAB -----
 with tab_play:
-    # Final banner + airplanes at top if done
-    if all(df is not None for df in st.session_state.timeline):
+    # Final banner + airplanes if done
+    finished = all(df is not None for df in st.session_state.timeline)
+    if finished:
         st.markdown("<p style='font-size:2rem; text-align:center;'>✈️ ✈️ ✈️ ✈️ ✈️</p>", unsafe_allow_html=True)
         st.success(
             "GAME OVER!\n\n"
@@ -168,14 +169,23 @@ with tab_play:
             icon="✅"
         )
 
-    # KPIs
-    immediate = sum(st.session_state.data[r]["Cost"].sum() for r in ROLES)
-    fines     = compute_time_fines()
-    gt        = latest_time() if st.session_state.timeline[st.session_state.round-1] is not None else current_ground_time()
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Immediate Cost", f"${int(immediate):,}")
-    c2.metric("Time Fines", f"${int(fines):,}")
-    c3.metric("Ground Time", f"{gt} min", delta=f"{gt-TARGET_MIN:+}")
+    # KPIs: either per-flight or cumulative
+    if finished:
+        total_immediate = sum(st.session_state.data[r]["Cost"].sum() for r in ROLES)
+        total_fines     = compute_time_fines()
+        total_ground    = sum(st.session_state.timeline[i]["End"].max() for i in range(ROUNDS))
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Immediate Cost (all flights)", f"${total_immediate:,}")
+        c2.metric("Time Fines (all flights)", f"${total_fines:,}")
+        c3.metric("Total Ground Time", f"{total_ground} min")
+    else:
+        immediate = sum(st.session_state.data[r]["Cost"].sum() for r in ROLES)
+        fines     = compute_time_fines(upto=st.session_state.round-1)
+        gt        = latest_time() if st.session_state.timeline[st.session_state.round-1] is not None else current_ground_time()
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Immediate Cost", f"${immediate:,}")
+        c2.metric("Time Fines", f"${fines:,}")
+        c3.metric("Ground Time", f"{gt} min", delta=f"{gt-TARGET_MIN:+}")
 
     st.header(f"Flight {st.session_state.round}")
 
@@ -215,15 +225,11 @@ with tab_play:
                 for k in list(st.session_state.keys()): del st.session_state[k]
                 st.rerun()
 
-    # Final summary table
-    if all(df is not None for df in st.session_state.timeline):
+    if finished:
         rows=[]
         for r in ROLES:
             imm = int(st.session_state.data[r]["Cost"].sum())
-            tf  = sum(
-                max(st.session_state.timeline[i]["End"].max()-TARGET_MIN,0)*FINE_PER_MIN
-                for i in range(ROUNDS)
-            )
+            tf  = sum(max(st.session_state.timeline[i]["End"].max()-TARGET_MIN,0)*FINE_PER_MIN for i in range(ROUNDS))
             rows.append((r, imm, tf, imm+tf))
         summary = pd.DataFrame(rows,columns=["Role","Immediate Cost","Time Fines","Total"])
         st.table(summary.sort_values("Total").reset_index(drop=True))
