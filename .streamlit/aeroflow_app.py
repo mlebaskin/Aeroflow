@@ -32,7 +32,7 @@ def init_state():
     if "data" not in st.session_state:
         st.session_state.data = {
             r: pd.DataFrame({
-                "Round": range(1, ROUNDS + 1),
+                "Round":    range(1, ROUNDS + 1),
                 "Decision": ["-"] * ROUNDS,
                 "Duration": [0] * ROUNDS,
                 "Cost":     [0] * ROUNDS,
@@ -63,28 +63,27 @@ def build_timeline(i):
     fine  =excess*FINE_PER_MIN
     if fine:
         for r in ROLES:
-            st.session_state.data[r].at[i,"Cost"] += fine  # each role pays
+            st.session_state.data[r].at[i,"Cost"] += fine
 
 def record(role,i,choice):
     df=st.session_state.data[role]
     if role==ROLES[0]:
         if "Dedicated" in choice:
-            dur,cost,note = GATE_PVT,GATE_FEE,"AODB reserved stand"
+            dur,cost,note = GATE_PVT,GATE_FEE,"Reserved stand"
         else:
-            dur,cost,note = GATE_SHR,0,"AODB shared stand"
-            if random.random()<0.5:
-                dur+=10; note+=" (+10 clash)"
+            dur,cost,note = GATE_SHR,0,"Shared stand"
+            if random.random()<0.5: dur+=10; note+=" (+10 clash)"
     elif role==ROLES[1]:
         if "Quick" in choice:
-            dur,cost,note = CREW_NB,0,"CRS quick swap"
+            dur,cost,note = CREW_NB,0,"Quick swap"
             if random.random()<0.4: dur+=15; note+=" (+15 crew delay)"
         else:
-            dur,cost,note = CREW_B10,0,"CRS buffered swap"
+            dur,cost,note = CREW_B10,0,"Buffered swap"
     else:
         if "Fix Now" in choice:
-            dur,cost,note = MX_FIX,MX_FIX_COST,"MEL immediate fix"
+            dur,cost,note = MX_FIX, MX_FIX_COST, "Immediate fix"
         else:
-            dur,cost,note = MX_DEF,0,"MEL defer"
+            dur,cost,note = MX_DEF, 0, "Deferred"
             if random.random()<MX_PEN_PROB:
                 cost+=MX_PENALTY; note+=" penalty $1k"
             else: note+=" no penalty"
@@ -119,13 +118,13 @@ def kpi_strip(role):
 
 def opts(role):
     if role==ROLES[0]:
-        return ("AODB: Dedicated Stand ($500)",
-                "AODB: Shared Stand (50 % +10 min)")
+        return ("AODB: Dedicated Stand ($500 – guaranteed gate)",
+                "AODB: Shared Stand (free – 50 % chance +10 min wait)")
     if role==ROLES[1]:
-        return ("CRS: Quick Crew Swap (40 % +15 min)",
-                "CRS: Buffered Swap (+10 min)")
+        return ("CRS: Quick Crew Swap (30 min – 40 % chance +15 min)",
+                "CRS: Buffered Crew Swap (40 min – delay-proof)")
     return ("MEL: Fix Now (+20 min, $300)",
-            "MEL: Defer (40 % $1k penalty)")
+            "MEL: Defer (0 min – 40 % $1k penalty)")
 
 # ---------- PAGE ----------
 st.set_page_config("MMIS 494 Aviation MIS Simulation","🛫",layout="wide")
@@ -133,36 +132,45 @@ st.title("🛫 MMIS 494 Aviation MIS Simulation")
 
 tab_help, tab_play = st.tabs(["How to Play","Play"])
 
-# ----- HELP TAB ----  (Mission & Round detail rewritten) ----
 with tab_help:
     st.header("Your Mission")
     st.markdown(
-        "Turn five delayed flights **fast and cheap**.  \n"
-        "• Every round you update three MIS records: **AODB** stand-allocation, **CRS** crew plan, and the **MEL** defect list.  \n"
-        "• A perfect turnaround is **45 min**; every extra minute adds a **$100 fine to your ledger**.  \n"
-        "Balance resource fees against delay fines and finish Round 5 with the smallest bill."
+        "Turn five delayed flights **fast _and_ cheap**.  \n"
+        "• Each round you update three live information systems:  **AODB** (gate/stand), "
+        "**CRS** (crew rostering), and the **MEL** (defect log).  \n"
+        "• A perfect turnaround is **45 minutes**.  Go over and every extra minute "
+        "adds **$100** to _your_ bill.  \n"
+        "Paying fees can prevent delay—but spend too freely and you’ll go broke. "
+        "Find the sweet spot!"
     )
 
-    st.subheader("Each Round, step-by-step")
+    st.subheader("Each Round, step by step")
     st.markdown(
-        "1. **AODB stand** – Dedicated stand locks the gate (costly but safe); Shared stand is free but may clash.  \n"
-        "2. **CRS crew plan** – Quick swap is fast but risky; Buffered swap is slower, zero surprise.  \n"
-        "3. **MEL decision** – Fix the defect now (time + cash) or Defer under MEL (risk future penalty).  \n"
-        "4. Click **Submit Decision** → timeline shows how your write cascades to the next role."
+        "1. **AODB stand assignment** – Reserve a **Dedicated Stand** (you pay for a private gate; "
+        "no waiting) or choose **Shared Stand** (free, but there’s a 50 % chance another plane is "
+        "still there, forcing you to wait **+10 min**).  \n"
+        "2. **CRS crew plan** – **Quick Swap** schedules a tight 30-minute crew change; fast, "
+        "but if the relief crew runs late (40 % chance) you lose **+15 min**.  "
+        "**Buffered Swap** blocks 40 minutes, adding a built-in buffer so delay can’t happen.  \n"
+        "3. **MEL decision** – **Fix Now** means mechanics spend 20 min and \$300 to clear the "
+        "defect; safe but slower.  **Defer** logs the defect in the MEL: zero minutes now, "
+        "but there’s a 40 % chance compliance audits fine you **\$1 000** later.  \n"
+        "4. Click **Submit Decision** – your MIS writes flow to the next role and the timeline "
+        "shows the combined ground time."
     )
 
     st.header("Roles & Options")
     st.markdown(
         "- **Airport Operations – Ramp Ringleader**  \n"
-        "  You update the *StandOccupancy* table in **AODB**, marshal the jet, and chase rogue geese.  \n"
+        "  Updates the *StandOccupancy* table in **AODB** and manages ground equipment.  \n"
         "  • AODB: Dedicated Stand – pay $500, zero conflict.  \n"
         "  • AODB: Shared Stand – free, 50 % chance another flight bumps you (+10 min).\n\n"
         "- **Airline Control Center – Dispatch DJ**  \n"
-        "  You write crew swaps to **CRS**.  \n"
-        "  • CRS: Quick Crew Swap – 30 min, 40 % chance the relief crew is late (+15 min).  \n"
-        "  • CRS: Buffered Swap – always 40 min (adds 10 min but no surprises).\n\n"
+        "  Writes crew records to **CRS** and files the flight plan.  \n"
+        "  • CRS: Quick Crew Swap – 30 min, 40 % chance of relief-crew delay (+15 min).  \n"
+        "  • CRS: Buffered Swap – always 40 min; no last-minute surprises.\n\n"
         "- **Aircraft Maintenance – Wrench Wizards**  \n"
-        "  You log actions in the **MEL** database.  \n"
+        "  Logs actions in the **MEL** defect database.  \n"
         "  - MEL: Fix Now – add 20 min and pay $300.  \n"
         "  - MEL: Defer – 0 min now, 40 % chance of a $1 000 penalty."
     )
@@ -170,12 +178,11 @@ with tab_help:
     st.subheader("Acronyms Cheat-Sheet")
     st.markdown(
         "- **AODB** – Airport Operational Data Base (gate/stand records)  \n"
-        "- **CRS** – Crew Rostering System  \n"
-        "- **MEL** – Minimum Equipment List for deferred defects"
+        "- **CRS** – Crew Rostering System (who flies which leg)  \n"
+        "- **MEL** – Minimum Equipment List (approved deferred defects)"
     )
-    st.markdown(f"*Delay past **{ON_TIME_MIN} min** costs **you** **${FINE_PER_MIN}** per minute.*")
+    st.markdown(f"*Every minute past **{ON_TIME_MIN}** costs **you** **${FINE_PER_MIN}**.*")
 
-# ----- PLAY TAB ----
 with tab_play:
     rnd=st.session_state.round
     role=st.sidebar.selectbox("Your Role", ROLES)
@@ -186,7 +193,7 @@ with tab_play:
 
     if st.session_state.data[role].at[rnd-1,"Decision"] == "-":
         choice=st.radio("Make your MIS update:", opts(role))
-        st.caption("This write flows to the next system in the chain.")
+        st.caption("This update cascades to the next system in sequence.")
         if st.button("Submit Decision"):
             record(role,rnd-1,choice); st.rerun()
     else:
@@ -196,7 +203,7 @@ with tab_play:
     st.dataframe(st.session_state.data[role].drop(columns="Round"))
 
     st.subheader("Timeline Board")
-    board = next((b for b in reversed(st.session_state.timeline) if b is not None), None)
+    board=next((b for b in reversed(st.session_state.timeline) if b is not None), None)
     if board is not None:
         st.dataframe(board)
     else:
@@ -204,8 +211,8 @@ with tab_play:
 
     if all(b is not None for b in st.session_state.timeline):
         st.balloons(); st.success("GAME OVER")
-        summary = pd.DataFrame({
-            "Role": ROLES,
-            "Total $": [int(st.session_state.data[r]["Cost"].sum()) for r in ROLES]
+        summary=pd.DataFrame({
+            "Role":ROLES,
+            "Total $":[int(st.session_state.data[r]["Cost"].sum()) for r in ROLES]
         }).sort_values("Total $").reset_index(drop=True)
         st.table(summary)
