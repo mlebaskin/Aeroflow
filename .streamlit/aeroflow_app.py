@@ -132,8 +132,8 @@ tab_help, tab_play = st.tabs(["How to Play","Play"])
 with tab_help:
     st.header("Your Mission")
     st.markdown(
-        "Turn five delayed flights fast and cheap.  \n"
-        "Each flight you update three information systems: AODB gate allocation, CRS crew plan, and MEL defect log.  \n"
+        "Turn five delayed flights while keeping the time down and cost low.  \n"
+        "Each flight, you will update three information systems: AODB gate allocation, CRS crew plan, and MEL defect log.  \n"
         "Perfect ground time is 45 minutes; every extra minute costs $100.  \n"
         "Spend money to avoid time—or gamble and hope delays stay short."
     )
