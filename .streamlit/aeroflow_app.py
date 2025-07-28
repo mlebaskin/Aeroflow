@@ -63,26 +63,32 @@ def build_timeline(i):
     fine   = excess * FINE_PER_MIN
     if fine:
         for r in ROLES:
-            st.session_state.data[r].at[i,"Cost"] += fine  # each role pays full fine
+            st.session_state.data[r].at[i,"Cost"] += fine
 
 def record(role, i, choice):
     df = st.session_state.data[role]
     if role == ROLES[0]:
         dur,cost,note = (GATE_PVT,GATE_FEE,"Private gate") if choice=="Private Gate" \
                         else (GATE_SHR,0,"Shared gate")
-        if choice=="Shared Gate" and random.random()<0.5: dur+=10; note+=" (+10 clash)"
+        if choice=="Shared Gate" and random.random()<0.5:
+            dur += 10; note += " (+10 clash)"
     elif role == ROLES[1]:
         dur,cost,note = (CREW_NB,0,"No buffer") if choice=="No Buffer" \
                         else (CREW_B10,0,"Buffer 10")
-        if choice=="No Buffer" and random.random()<0.4: dur+=15; note+=" (+15 late crew)"
+        if choice=="No Buffer" and random.random()<0.4:
+            dur += 15; note += " (+15 late crew)"
     else:
         if choice=="Fix Now": dur,cost,note = MX_FIX, MX_FIX_COST, "Fixed now"
         else:
             dur,cost,note = MX_DEF, 0, "Defer"
-            if random.random()<MX_PEN_PROB: cost+=MX_PENALTY; note+=" Penalty $1k"
-            else: note+=" No penalty"
+            if random.random()<MX_PEN_PROB:
+                cost += MX_PENALTY; note += " Penalty $1k"
+            else:
+                note += " No penalty"
     df.loc[i,["Decision","Duration","Cost","Notes"]] = [choice,dur,int(cost),note]
-    if everyone_done(i): build_timeline(i); st.session_state.round = min(i+2,ROUNDS)
+    if everyone_done(i):
+        build_timeline(i)
+        st.session_state.round = min(i+2, ROUNDS)
 
 def latest_time(): 
     boards=[b for b in st.session_state.timeline if b is not None]
@@ -104,7 +110,8 @@ def sidebar(role,rnd):
             if st.button("Next Round"):
                 st.session_state.round=min(rnd+1,ROUNDS); st.rerun()
             if st.button("Reset Game"):
-                for k in list(st.session_state.keys()): del st.session_state[k]
+                for k in list(st.session_state.keys()):
+                    del st.session_state[k]
                 st.rerun()
 
 def kpi_strip(role):
@@ -122,7 +129,6 @@ st.title("🛫 MMIS 494 Aviation MIS Simulation")
 
 tab_help, tab_play = st.tabs(["How to Play","Play"])
 
-# ----- HELP TAB ----
 with tab_help:
     st.header("Your Mission")
     st.markdown(
@@ -152,12 +158,11 @@ with tab_help:
         "  • **Buffer 10** – safer, always 40 min (adds 10 min but no surprises).\n\n"
         "- **Aircraft Maintenance – Wrench Wizards**  \n"
         "  You tackle pilot snags, from sticky flaps to broken coffee makers.  \n"
-        "- **Fix Now** – add 20 min and pay $300.  \n"
-        "- **Defer** – zero minutes now, 40 % chance of a $1 000 penalty later."
+        "  - **Fix Now** – add 20 min and pay $300.  \n"
+        "  - **Defer** – zero minutes now, 40 % chance of a $1 000 penalty later."
     )
     st.markdown(f"*Every minute past **{ON_TIME_MIN}** costs **you** **${FINE_PER_MIN}**.*")
 
-# ----- PLAY TAB ----
 with tab_play:
     rnd = st.session_state.round
     role = st.sidebar.selectbox("Your Role", ROLES)
