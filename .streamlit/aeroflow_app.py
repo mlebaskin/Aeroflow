@@ -1,8 +1,8 @@
-"""MMIS 494 Flight Turn Simulation – Streamlit App (v0.4)
+"""MMIS 494 Flight Turn Simulation – Streamlit App (v0.4b)
 
 Teams coordinate one flight turnaround across Airport Ops,
 Airline Control, and Maintenance.  Lowest total cost after
-five rounds wins.  Language simplified for easy reading.
+five rounds wins.  Uses st.rerun() for Streamlit ≥1.27.
 """
 
 import random
@@ -95,21 +95,23 @@ def simulation_ui():
         "### Game Facts\n"
         f"• On-time goal: **{ON_TIME_MIN} min** or less\n\n"
         f"• Delay fine: **${COST_PER_DELAY_MIN}** per minute over {ON_TIME_MIN}\n\n"
-        f"• Gate fee (private gate): **${GATE_FEE}**\n\n"
+        f"• Private gate fee: **${GATE_FEE}**\n\n"
         f"• Fix-now cost: **${MEL_FIX_COST}**\n\n"
-        f"• Penalty if deferred problem: **${MEL_PENALTY}**"
+        f"• Deferred item penalty: **${MEL_PENALTY}**"
     )
 
+    # ─ Instructor controls
     with st.sidebar.expander("Instructor", expanded=False):
         pw = st.text_input("Password", type="password")
         if pw == INSTRUCTOR_PW:
-            st.success("Instructor powers on")
+            st.success("Instructor mode on")
             if st.button("Next Round ➡️") and round_num < ROUNDS:
                 st.session_state.current_round += 1
+                st.rerun()
             if st.button("Reset Game"):
                 for k in list(st.session_state.keys()):
                     del st.session_state[k]
-                st.experimental_rerun()
+                st.rerun()
 
     st.subheader(f"{role} – Round {round_num}")
 
@@ -123,47 +125,44 @@ def simulation_ui():
         # Cheat-sheets and decision inputs
         if role == "Airport_Ops":
             st.markdown(
-                "Private Gate costs $500 but no delay.\n"
-                "Shared Gate is free but has a 50% risk of 10-min delay."
+                "• **Private Gate** costs $500 but adds **0** delay.\n"
+                "• **Shared Gate** is free but has a 50 % risk of **+10 min**."
             )
-            decision = st.radio(
-                "Pick your gate plan:",
-                ["Dedicated Gate", "Shared Gate"],
-            )
+            decision = st.radio("Pick your gate plan:",
+                                ["Dedicated Gate", "Shared Gate"])
 
         elif role == "Airline_Control":
             st.markdown(
-                "No Buffer swaps the crew in 30 min but can add 15 more minutes.\n"
-                "Buffer 10 takes 40 min but is safe."
+                "• **No Buffer**: 30 min swap, 40 % risk of **+15 min**.\n"
+                "• **Buffer 10**: 40 min swap, no risk."
             )
-            decision = st.radio(
-                "Pick your crew plan:",
-                ["No Buffer", "Buffer 10"],
-            )
+            decision = st.radio("Pick your crew plan:",
+                                ["No Buffer", "Buffer 10"])
 
         else:  # Maintenance
             st.markdown(
-                "**MEL = Minimum Equipment List.** It’s the list of parts a plane can fly without for a short time.\n\n"
-                "* Fix Now: add 20 min and $300 but problem solved.\n"
-                "* Defer: no delay now, but 20% risk of a $1,000 fine later."
+                "**MEL = Minimum Equipment List.** It lists parts a"
+                " plane can temporarily fly without.\n\n"
+                "• **Fix Now** → +20 min and $300, problem solved.\n"
+                "• **Defer**   → 0 delay now, 20 % risk of $1 000 later."
             )
-            decision = st.radio(
-                "Fix the issue or defer?",
-                ["Fix Now", "Defer"],
-            )
+            decision = st.radio("Fix now or defer?",
+                                ["Fix Now", "Defer"])
 
         if st.button("Submit Decision"):
             delay, cost = apply_decision(role, decision)
             if role == "Airport_Ops":
                 delay += event_delay
             total_cost = cost + max(delay - ON_TIME_MIN, 0) * COST_PER_DELAY_MIN
+
             df_role.loc[
                 round_num - 1, ["Decision", "RoleDelay", "RoleCost"]
             ] = [decision, delay, total_cost]
             update_kpi(role)
-            st.info(f"You added {delay} min and ${total_cost} cost.")
+
+            st.info(f"You added **{delay} min** and **${total_cost}** cost.")
             st.success("Decision saved!")
-            st.stop()
+            st.rerun()
     else:
         st.info("Decision already made for this round.")
 
@@ -176,11 +175,8 @@ def simulation_ui():
 
 # ─────────────────────────── Main Page ───────────────────────────────── #
 def main():
-    st.set_page_config(
-        page_title="MMIS 494 Flight Turn Simulation",
-        page_icon="🛫",
-        layout="wide",
-    )
+    st.set_page_config(page_title="MMIS 494 Flight Turn Simulation",
+                       page_icon="🛫", layout="wide")
     st.title("🛫 MMIS 494 Flight Turn Simulation")
     init_state()
 
@@ -190,23 +186,23 @@ def main():
         st.header("Quick Guide")
         st.markdown(
             f"""
-**Goal** – Keep the plane on the ground **{ON_TIME_MIN} minutes or less** and spend the least money.
+**Goal** – Keep the plane on the ground **{ON_TIME_MIN} min or less** and spend the least money.
 
-| Role | Choice A | Choice B | What can go wrong? |
-|------|----------|----------|--------------------|
-| Airport Ops | Private Gate ($500, 0 min) | Shared Gate ($0, 50% +10 min) | Gate clash |
-| Airline Control | No Buffer (30 min, 40% +15) | Buffer 10 (40 min, safe) | Crew late |
-| Maintenance | Fix Now (+20 min, $300) | Defer (20% $1,000) | Extra cost later |
+| Role | Choice A | Choice B | Risk |
+|------|----------|----------|------|
+| Airport Ops | Private Gate ($500, 0 min) | Shared Gate ($0, 50 % +10 min) | Gate clash |
+| Airline Control | No Buffer (30 min, 40 % +15 min) | Buffer 10 (40 min, safe) | Crew late |
+| Maintenance | Fix Now (+20 min, $300) | Defer (20 % $1 000) | Extra cost later |
 
 **Each Round**  
-1. Read the *Event* banner.  
-2. Pick your choice and press **Submit Decision**.  
-3. Instructor presses **Next Round**.  
+1. Read the **EVENT** banner.  
+2. Make your choice and press **Submit Decision**.  
+3. Instructor clicks **Next Round**.  
 4. Watch the scoreboard change.
 
 **Scoring**  
-Delay over {ON_TIME_MIN} minutes costs **${COST_PER_DELAY_MIN}** per minute.  
-Lowest total wins after {ROUNDS} rounds.
+Any delay over {ON_TIME_MIN} min costs **${COST_PER_DELAY_MIN}** per minute.  
+After {ROUNDS} rounds, the team with the lowest total cost wins.
 """
         )
 
