@@ -1,17 +1,24 @@
-import random, pandas as pd, streamlit as st
+import random
+import pandas as pd
+import streamlit as st
 
 # ---------- CONFIG ----------
 ROLES = ["Airport Operations", "Airline Control Center", "Aircraft Maintenance"]
 ROUNDS = 5
 TARGET_MIN = 45
 FINE_PER_MIN = 100
+
+# Baseline durations (minutes)
 GATE_PVT, GATE_SHR = 10, 10
 CREW_NB, CREW_B10  = 30, 40
 MX_FIX,  MX_DEF    = 20, 0
+
+# Costs (dollars)
 GATE_FEE = 500
 MX_FIX_COST = 300
 MX_PENALTY  = 1000
 MX_PEN_PROB = 0.4
+
 EVENT_CARDS = [
     ("Wildlife on the runway - bird hazard.", 8),
     ("Fuel truck stuck in traffic - stand blocked.", 12),
@@ -22,65 +29,75 @@ EVENT_CARDS = [
     ("Catering cart spills tomato soup on luggage.", 6),
     ("Lightning overhead - ground ops paused.", 11),
 ]
+
 INSTRUCTOR_PW = st.secrets.get("INSTRUCTOR_PW", "flight123")
 
 # ---------- STATE ----------
 def init_state():
     if "data" not in st.session_state:
         st.session_state.data = {
-            r: pd.DataFrame(
-                {"Round": range(1, ROUNDS + 1),
-                 "Decision": ["-"] * ROUNDS,
-                 "Duration": [0] * ROUNDS,
-                 "Cost": [0] * ROUNDS,
-                 "Notes": [""] * ROUNDS}
-            ) for r in ROLES
+            r: pd.DataFrame({
+                "Round":    range(1, ROUNDS + 1),
+                "Decision": ["-"] * ROUNDS,
+                "Duration": [0] * ROUNDS,
+                "Cost":     [0] * ROUNDS,
+                "Notes":    [""] * ROUNDS
+            }) for r in ROLES
         }
-        st.session_state.events = random.sample(EVENT_CARDS, ROUNDS)
-        st.session_state.timeline = [None] * ROUNDS
-        st.session_state.round = 1
+        st.session_state.events    = random.sample(EVENT_CARDS, ROUNDS)
+        st.session_state.timeline  = [None] * ROUNDS
+        st.session_state.round     = 1
         st.session_state.role_pick = ROLES[0]
 init_state()
 
 # ---------- LOGIC ----------
-def everyone_done(i):
-    return all(st.session_state.data[r].at[i, "Decision"] != "-" for r in ROLES)
+def everyone_done(idx):
+    return all(st.session_state.data[r].at[idx, "Decision"] != "-" for r in ROLES)
 
-def build_timeline(i):
-    txt, delay = st.session_state.events[i]
-    start = 0; rows = []
-    ap = st.session_state.data[ROLES[0]].loc[i]; ap_end = start + ap.Duration + delay
+def build_timeline(idx):
+    txt, delay = st.session_state.events[idx]
+    rows, start = [], 0
+
+    ap = st.session_state.data[ROLES[0]].loc[idx]
+    ap_end = start + ap.Duration + delay
     rows.append([ROLES[0], start, ap_end])
-    ac = st.session_state.data[ROLES[1]].loc[i]; ac_end = ap_end + ac.Duration
+
+    ac = st.session_state.data[ROLES[1]].loc[idx]
+    ac_end = ap_end + ac.Duration
     rows.append([ROLES[1], ap_end, ac_end])
-    mx = st.session_state.data[ROLES[2]].loc[i]; mx_end = ac_end + mx.Duration
+
+    mx = st.session_state.data[ROLES[2]].loc[idx]
+    mx_end = ac_end + mx.Duration
     rows.append([ROLES[2], ac_end, mx_end])
-    st.session_state.timeline[i] = pd.DataFrame(rows, columns=["Role", "Start", "End"])
+
+    st.session_state.timeline[idx] = pd.DataFrame(rows, columns=["Role", "Start", "End"])
+
     fine = max(mx_end - TARGET_MIN, 0) * FINE_PER_MIN
     for r in ROLES:
-        st.session_state.data[r].at[i, "Cost"] += fine
+        st.session_state.data[r].at[idx, "Cost"] += fine
 
 def record(role, idx, choice):
     df = st.session_state.data[role]
+
     if role == ROLES[0]:
         if "Dedicated" in choice:
             dur, cost, note = GATE_PVT, GATE_FEE, "Reserved stand"
         else:
             extra = random.randint(5, 20)
             clash = random.random() < 0.5
-            dur = GATE_SHR + (extra if clash else 0)
+            dur  = GATE_SHR + (extra if clash else 0)
             cost = 0
             note = "Shared stand" + (f" +{extra} wait" if clash else "")
     elif role == ROLES[1]:
         if "Quick" in choice:
             extra = random.randint(5, 25)
-            delay = random.random() < 0.4
-            dur = CREW_NB + (extra if delay else 0)
+            delay_happens = random.random() < 0.4
+            dur  = CREW_NB + (extra if delay_happens else 0)
             cost = 0
-            note = "Quick swap" + (f" +{extra}" if delay else "")
+            note = "Quick swap" + (f" +{extra}" if delay_happens else "")
         else:
             dur, cost, note = CREW_B10, 0, "Buffered swap"
-    else:
+    else:  # Maintenance
         if "Fix Now" in choice:
             dur, cost, note = MX_FIX, MX_FIX_COST, "Immediate fix"
         else:
@@ -88,7 +105,9 @@ def record(role, idx, choice):
             if random.random() < MX_PEN_PROB:
                 cost += MX_PENALTY
                 note += " penalty 1000"
+
     df.loc[idx, ["Decision", "Duration", "Cost", "Notes"]] = [choice, dur, int(cost), note]
+
     if everyone_done(idx):
         build_timeline(idx)
         st.session_state.round = min(idx + 2, ROUNDS)
@@ -101,10 +120,10 @@ def latest_time():
 def current_ground_time():
     idx = st.session_state.round - 1
     delay = st.session_state.events[idx][1]
-    time_sum = delay
+    total = delay
     for r in ROLES:
-        time_sum += st.session_state.data[r].at[idx, "Duration"]
-    return time_sum
+        total += st.session_state.data[r].at[idx, "Duration"]
+    return total
 
 # ---------- UI LABELS ----------
 def option_labels(role):
@@ -115,12 +134,12 @@ def option_labels(role):
         )
     if role == ROLES[1]:
         return (
-            "CRS: Quick Crew Swap (30 min - 40 % +5-25 min)",
-            "CRS: Buffered Crew Swap (40 min - delay-proof)",
+            "CRS: Quick Crew Swap (30 min - 40 % risk +5-25 min)",
+            "CRS: Buffered Crew Swap (40 min - guaranteed on time)",
         )
     return (
         "MEL: Fix Now (+20 min, $300)",
-        "MEL: Defer (0 min - 40 % $1k)",
+        "MEL: Defer (0 min - 40 % risk $1,000)",
     )
 
 # ---------- PAGE ----------
@@ -129,21 +148,23 @@ st.title("🛫 MMIS 494 Aviation MIS Simulation")
 
 tab_help, tab_play = st.tabs(["How to Play", "Play"])
 
-# HELP TAB
+# ----- HELP TAB -----
 with tab_help:
     st.header("Your Mission")
     st.markdown(
-        "Turn five late flights quickly **and** economically with three MIS tools.  \n"
+        "Turn five late flights quickly and economically while juggling three MIS tools.  \n"
         "Every choice you enter in **AODB**, **CRS**, or **MEL** ripples to the next role.  \n"
-        "A perfect turnaround is 45 minutes; each extra minute costs $100 on your ledger."
+        "A perfect turnaround is **45 minutes**; each extra minute costs **$100** on your ledger."
     )
     st.subheader("Each Round, step by step")
     st.markdown(
-        "- AODB stand - Dedicated ($500, gate always free) **or** Shared (free, 50 % risk wait +5-20 min).  \n"
-        "- CRS crew - Quick Swap (30 min, 40 % risk +5-25 min) **or** Buffered Swap (40 min, guaranteed).  \n"
-        "- MEL decision - Fix Now (+20 min & $300) **or** Defer (0 min, 40 % risk $1 000 penalty).  \n"
-        "- Flight Event - banner shows extra delay.  \n"
-        "- Click Submit Decision to update systems and start the next flight."
+        "- **AODB stand** - Dedicated Stand (pay $500, gate always free) or Shared Stand "
+        "(free but 50 % risk; wait +5-20 min if busy).  \n"
+        "- **CRS crew** - Quick Swap (30 min, 40 % risk +5-25 min) or Buffered Swap "
+        "(40 min, guaranteed on time).  \n"
+        "- **MEL decision** - Fix Now (+20 min & $300) or Defer (0 min now, 40 % risk $1,000 penalty).  \n"
+        "- **Flight Event** - banner shows extra delay.  \n"
+        "- Click **Submit Decision** to update all systems and start the next flight."
     )
     st.subheader("Acronym Glossary")
     st.markdown(
@@ -152,41 +173,48 @@ with tab_help:
         "- MEL  - Minimum Equipment List (defect log)"
     )
 
-# PLAY TAB
+# ----- PLAY TAB -----
 with tab_play:
     st.header(f"Flight {st.session_state.round}")
 
-    role = st.selectbox("Select your role this update", ROLES,
-                        index=ROLES.index(st.session_state.role_pick))
+    role = st.selectbox(
+        "Select your role for this update", ROLES,
+        index=ROLES.index(st.session_state.role_pick)
+    )
     st.session_state.role_pick = role
 
-    # KPIs live
+    # Live KPIs
     col1, col2 = st.columns(2)
     col1.metric("Your Cost", f"${int(st.session_state.data[role]['Cost'].sum()):,}")
-    gtime = latest_time() if st.session_state.timeline[st.session_state.round-1] is not None else current_ground_time()
+    gtime = (latest_time()
+             if st.session_state.timeline[st.session_state.round-1] is not None
+             else current_ground_time())
     col2.metric("Ground Time", f"{gtime} min", delta=f"{gtime - TARGET_MIN:+}")
 
+    # Event banner
     evt_txt, evt_delay = st.session_state.events[st.session_state.round - 1]
     st.warning(f"Flight Event - {evt_txt} (+{evt_delay} min)")
 
+    # Decision
     if st.session_state.data[role].at[st.session_state.round - 1, "Decision"] == "-":
-        choice = st.radio("Choose update", option_labels(role))
+        choice = st.radio("Choose your MIS update", option_labels(role))
         if st.button("Submit Decision"):
             record(role, st.session_state.round - 1, choice)
             st.rerun()
     else:
-        st.info("Decision already submitted.")
+        st.info("Decision already submitted for this role.")
 
     st.subheader("Your Ledger")
     st.dataframe(st.session_state.data[role].drop(columns="Round"))
 
     st.subheader("Timeline Board")
-    board = next((b for b in reversed(st.session_state.timeline) if b is not None), None)
+    board = next((b for b in reversed(st.session_state.timeline) if b), None)
     if board is not None:
         st.dataframe(board)
     else:
-        st.info("Waiting for timeline...")
+        st.info("Waiting for first flight to finish...")
 
+    # Instructor controls at bottom
     with st.expander("Instructor controls"):
         pw = st.text_input("Password", type="password")
         if pw == INSTRUCTOR_PW:
@@ -199,11 +227,12 @@ with tab_play:
                     del st.session_state[k]
                 st.rerun()
 
-    if all(b is not None for b in st.session_state.timeline):
+    # Game over summary
+    if all(b for b in st.session_state.timeline):
         st.balloons()
         st.success("GAME OVER")
-        summary = pd.DataFrame(
-            {"Role": ROLES,
-             "Total $": [int(st.session_state.data[r]["Cost"].sum()) for r in ROLES]}
-        ).sort_values("Total $").reset_index(drop=True)
+        summary = pd.DataFrame({
+            "Role": ROLES,
+            "Total $": [int(st.session_state.data[r]["Cost"].sum()) for r in ROLES]
+        }).sort_values("Total $").reset_index(drop=True)
         st.table(summary)
