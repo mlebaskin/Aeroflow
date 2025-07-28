@@ -164,10 +164,12 @@ with tab_play:
                         index=ROLES.index(st.session_state.role_pick))
     st.session_state.role_pick = role
 
+    # Live Total Cost
+    total_cost = sum(st.session_state.data[r]["Cost"].sum() for r in ROLES)
     col1, col2 = st.columns(2)
-    col1.metric("Your Cost", f"${int(st.session_state.data[role]['Cost'].sum()):,}")
-    gtime = latest_time() if st.session_state.timeline[st.session_state.round-1] else current_ground_time()
-    col2.metric("Ground Time", f"{gtime} min", delta=f"{gtime-TARGET_MIN:+}")
+    col1.metric("Total Cost so far", f"${int(total_cost):,}")
+    gtime = latest_time() if st.session_state.timeline[st.session_state.round-1] is not None else current_ground_time()
+    col2.metric("Ground Time", f"{gtime} min", delta=f"{gtime - TARGET_MIN:+}")
 
     evt, delay = st.session_state.events[st.session_state.round-1]
     st.warning(f"Flight Event – {evt} (+{delay} min)")
