@@ -114,7 +114,7 @@ def current_ground_time():
 
 def option_labels(role):
     if role==ROLES[0]:
-        return ("AODB: Dedicated Stand ($500 - gate always free)",
+        return ("AODB: Dedicated Stand ($500 - gate always available)",
                 "AODB: Shared Stand (free - 50 % risk +5-20 min)")
     if role==ROLES[1]:
         return ("CRS: Quick Crew Swap (30 min - 40 % risk +5-25 min)",
@@ -141,7 +141,7 @@ with tab_help:
     st.markdown(
         '''
         <ul style="font-family: sans-serif; font-size:1rem;">
-          <li><strong>AODB stand</strong> – Dedicated Stand (pay $500, gate always free) or Shared Stand (free, but 50% risk the gate is busy; if busy, wait 5–20 min randomly).</li>
+          <li><strong>AODB stand</strong> – Dedicated Stand (pay $500, gate always available) or Shared Stand (free, but 50% risk the gate is busy; if busy, wait 5–20 min randomly).</li>
           <li><strong>CRS crew</strong> – Quick Swap (30 min, 40% chance relief crew is late +5–25 min) or Buffered Swap (40 min, guaranteed on-time).</li>
           <li><strong>MEL decision</strong> – Fix Now (add 20 min & $300) or Defer (0 min now, but 40% chance a compliance audit fines you $1,000 later).</li>
           <li><strong>Flight Event</strong> – Weather, wildlife, or equipment surprise adds the banner delay.</li>
