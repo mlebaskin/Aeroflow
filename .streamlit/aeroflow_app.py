@@ -1,15 +1,8 @@
-"""Flight-Turn Simulation – Streamlit App (v0.3)
+"""MMIS 494 Flight Turn Simulation – Streamlit App (v0.4)
 
 Teams coordinate one flight turnaround across Airport Ops,
 Airline Control, and Maintenance.  Lowest total cost after
-five rounds wins.
-
-New in v0.3
------------
-✓ Sidebar constants panel
-✓ Event card highlighted in st.warning
-✓ Cost cheat-sheet next to each decision
-✓ Instant feedback: delay minutes & dollars after submission
+five rounds wins.  Language simplified for easy reading.
 """
 
 import random
@@ -21,18 +14,18 @@ import streamlit as st
 # ─────────────────────────── Config ──────────────────────────────────── #
 ROLES = ["Airport_Ops", "Airline_Control", "Maintenance"]
 ROUNDS = 5
-ON_TIME_MIN = 45            # scheduled ground time (minutes)
-COST_PER_DELAY_MIN = 100    # $ per minute over 45
-GATE_FEE = 500              # $ for dedicated gate
-MEL_FIX_COST = 300          # $ labour if fixing now
-MEL_PENALTY = 1000          # $ risk if deferring
+ON_TIME_MIN = 45            # minutes allowed on the ground
+COST_PER_DELAY_MIN = 100    # dollars for each extra minute
+GATE_FEE = 500              # dollars for a private (dedicated) gate
+MEL_FIX_COST = 300          # dollars when fixing right away
+MEL_PENALTY = 1000          # dollars if a deferred item becomes a problem
 
 INSTRUCTOR_PW = st.secrets.get("INSTRUCTOR_PW", "flight123")
 
 EVENT_CARDS = [
     ("Smooth turn", 0),
-    ("Mild ramp congestion", 5),
-    ("Catering late", 10),
+    ("Busy ramp", 5),
+    ("Catering truck late", 10),
     ("Thunderstorm nearby", 15),
 ]
 
@@ -56,9 +49,8 @@ def init_state():
             index=ROLES, columns=["Delay", "Cost"]
         ).fillna(0)
 
-# ──────────────────────── Decision Calculator ────────────────────────── #
+# ───────────────────── Decision Logic ────────────────────────── #
 def apply_decision(role: str, decision: str):
-    """Return delay minutes and direct cost from a role’s choice."""
     delay = 0
     cost = 0
 
@@ -95,25 +87,24 @@ def update_kpi(role: str):
 
 # ───────────────────────── Simulation UI ─────────────────────────────── #
 def simulation_ui():
-    role = st.sidebar.selectbox("Role", ROLES)
+    role = st.sidebar.selectbox("Choose your role", ROLES)
     round_num = st.session_state.current_round
-    st.sidebar.markdown(f"**Current Round:** {round_num}")
+    st.sidebar.markdown(f"**Round:** {round_num} of {ROUNDS}")
 
-    # ─ Sidebar constants panel
     st.sidebar.markdown(
-        "#### 🔢 Scoring Constants\n"
-        f"- On-time threshold: **{ON_TIME_MIN} min**\n"
-        f"- Delay penalty: **${COST_PER_DELAY_MIN}** per minute > {ON_TIME_MIN}\n"
-        f"- Gate fee: **${GATE_FEE}** (Dedicated)\n"
-        f"- MEL fix: **${MEL_FIX_COST}**   •   MEL penalty: **${MEL_PENALTY}**"
+        "### Game Facts\n"
+        f"• On-time goal: **{ON_TIME_MIN} min** or less\n\n"
+        f"• Delay fine: **${COST_PER_DELAY_MIN}** per minute over {ON_TIME_MIN}\n\n"
+        f"• Gate fee (private gate): **${GATE_FEE}**\n\n"
+        f"• Fix-now cost: **${MEL_FIX_COST}**\n\n"
+        f"• Penalty if deferred problem: **${MEL_PENALTY}**"
     )
 
-    # ─ Instructor controls
-    with st.sidebar.expander("Instructor Panel", expanded=False):
+    with st.sidebar.expander("Instructor", expanded=False):
         pw = st.text_input("Password", type="password")
         if pw == INSTRUCTOR_PW:
-            st.success("Instructor mode enabled")
-            if st.button("Advance Round ➡️") and round_num < ROUNDS:
+            st.success("Instructor powers on")
+            if st.button("Next Round ➡️") and round_num < ROUNDS:
                 st.session_state.current_round += 1
             if st.button("Reset Game"):
                 for k in list(st.session_state.keys()):
@@ -122,110 +113,103 @@ def simulation_ui():
 
     st.subheader(f"{role} – Round {round_num}")
 
+    # Event banner
+    event_label, event_delay = st.session_state.events[round_num - 1]
+    st.warning(f"EVENT: {event_label}  (+{event_delay} minutes)")
+
     df_role = st.session_state.turn_data[role]
 
-    # ─ Highlight current event
-    event_label, event_delay = st.session_state.events[round_num - 1]
-    st.markdown("### 📣 Current Event")
-    st.warning(f"**{event_label}**  &nbsp; (+{event_delay} min disruption)")
-
-    # ─ Decision input if not already made
     if df_role.at[round_num - 1, "Decision"] == "-":
-        # Cost cheat-sheet
+        # Cheat-sheets and decision inputs
         if role == "Airport_Ops":
             st.markdown(
-                "*Cost reference:*  \n"
-                f"`Dedicated`: **${GATE_FEE}**, 0 min delay  \n"
-                "`Shared`: **$0**, 50 % risk +10 min delay"
+                "Private Gate costs $500 but no delay.\n"
+                "Shared Gate is free but has a 50% risk of 10-min delay."
             )
-            decision = st.radio("Gate Strategy", ["Dedicated Gate", "Shared Gate"])
+            decision = st.radio(
+                "Pick your gate plan:",
+                ["Dedicated Gate", "Shared Gate"],
+            )
 
         elif role == "Airline_Control":
             st.markdown(
-                "*Cost reference:*  \n"
-                "`No Buffer`: 30 min, 40 % risk +15 min  \n"
-                "`Buffer 10`: 40 min, 0 % risk"
+                "No Buffer swaps the crew in 30 min but can add 15 more minutes.\n"
+                "Buffer 10 takes 40 min but is safe."
             )
-            decision = st.radio("Crew Buffer", ["No Buffer", "Buffer 10"])
+            decision = st.radio(
+                "Pick your crew plan:",
+                ["No Buffer", "Buffer 10"],
+            )
 
         else:  # Maintenance
             st.markdown(
-                "*Cost reference:*  \n"
-                f"`Fix Now`: +20 min, **${MEL_FIX_COST}**  \n"
-                f"`Defer`: 20 % risk **${MEL_PENALTY}** penalty"
+                "**MEL = Minimum Equipment List.** It’s the list of parts a plane can fly without for a short time.\n\n"
+                "* Fix Now: add 20 min and $300 but problem solved.\n"
+                "* Defer: no delay now, but 20% risk of a $1,000 fine later."
             )
-            decision = st.radio("MEL Decision", ["Fix Now", "Defer"])
+            decision = st.radio(
+                "Fix the issue or defer?",
+                ["Fix Now", "Defer"],
+            )
 
         if st.button("Submit Decision"):
             delay, cost = apply_decision(role, decision)
-
-            # Event delay applies via Airport Ops record
             if role == "Airport_Ops":
                 delay += event_delay
-
             total_cost = cost + max(delay - ON_TIME_MIN, 0) * COST_PER_DELAY_MIN
-
-            # Store results
-            df_role.loc[round_num - 1, ["Decision", "RoleDelay", "RoleCost"]] = [
-                decision,
-                delay,
-                total_cost,
-            ]
+            df_role.loc[
+                round_num - 1, ["Decision", "RoleDelay", "RoleCost"]
+            ] = [decision, delay, total_cost]
             update_kpi(role)
-
-            # Immediate feedback
-            st.info(f"⏱️ Added **{delay} min**   •   💸 **${total_cost:,}**")
-
-            st.success("Decision recorded!")
-            st.stop()  # avoid double-render, let user advance round
+            st.info(f"You added {delay} min and ${total_cost} cost.")
+            st.success("Decision saved!")
+            st.stop()
     else:
-        st.info("Decision already submitted for this round.")
+        st.info("Decision already made for this round.")
 
-    # ─ Show ledgers and KPI
-    st.write("### Role Ledger")
+    st.write("### Your Role Ledger")
     st.dataframe(df_role, use_container_width=True)
 
     st.write("---")
-    st.subheader("Class KPI Scoreboard (cumulative)")
+    st.subheader("Class Scoreboard so far")
     st.dataframe(st.session_state.kpi, use_container_width=True)
 
-# ───────────────────────────── Main App ───────────────────────────────── #
+# ─────────────────────────── Main Page ───────────────────────────────── #
 def main():
     st.set_page_config(
-        page_title="Flight Turn Simulation", page_icon="🛫", layout="wide"
+        page_title="MMIS 494 Flight Turn Simulation",
+        page_icon="🛫",
+        layout="wide",
     )
-    st.title("🛫 MMIS 494 Flight-Turn MIS Simulation")
+    st.title("🛫 MMIS 494 Flight Turn Simulation")
     init_state()
 
-    tab_how, tab_play = st.tabs(["How to Play", "Simulation"])
+    tab_how, tab_play = st.tabs(["How to Play", "Play the Game"])
 
-    # — How to Play tab —
     with tab_how:
-        st.header("How to Play")
+        st.header("Quick Guide")
         st.markdown(
             f"""
-**Goal**  
-Push Flight 283 out on time (≤ {ON_TIME_MIN} min ground) for 5 turns while spending the least money.
+**Goal** – Keep the plane on the ground **{ON_TIME_MIN} minutes or less** and spend the least money.
 
-| Role | Option A | Option B | Trade-off |
-|------|----------|----------|-----------|
-| Airport Ops | Dedicated Gate (+${GATE_FEE}, 0 min) | Shared Gate ($0, 50 % +10 min) | Fee vs. conflict |
-| Airline Control | No Buffer (30 min, 40 % +15 min) | Buffer 10 (40 min, no risk) | Time vs. overtime |
-| Maintenance | Fix Now (+20 min, +${MEL_FIX_COST}) | Defer (20 % +${MEL_PENALTY} risk) | Delay vs. penalty |
+| Role | Choice A | Choice B | What can go wrong? |
+|------|----------|----------|--------------------|
+| Airport Ops | Private Gate ($500, 0 min) | Shared Gate ($0, 50% +10 min) | Gate clash |
+| Airline Control | No Buffer (30 min, 40% +15) | Buffer 10 (40 min, safe) | Crew late |
+| Maintenance | Fix Now (+20 min, $300) | Defer (20% $1,000) | Extra cost later |
 
-**Round loop**  
-1. Instructor reveals the *Event Card* (0–15 min disruption).  
-2. Each role chooses a decision and clicks **Submit Decision**.  
-3. Instructor clicks **Advance Round**.  
-4. Ledgers and KPI scoreboard update.
+**Each Round**  
+1. Read the *Event* banner.  
+2. Pick your choice and press **Submit Decision**.  
+3. Instructor presses **Next Round**.  
+4. Watch the scoreboard change.
 
 **Scoring**  
-*Role Cost* = decision cost + (delay – {ON_TIME_MIN}) × ${COST_PER_DELAY_MIN} (only if delay > {ON_TIME_MIN})  
-*Team Cost* = sum of Role Costs after 5 rounds – lowest wins.
+Delay over {ON_TIME_MIN} minutes costs **${COST_PER_DELAY_MIN}** per minute.  
+Lowest total wins after {ROUNDS} rounds.
 """
         )
 
-    # — Simulation tab —
     with tab_play:
         simulation_ui()
 
