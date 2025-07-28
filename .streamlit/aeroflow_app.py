@@ -1,150 +1,179 @@
+Flight‑Turn Simulation – Streamlit App (v0.1)
+===========================================
+Aviation‑specific replacement for the Beer Game: teams work together (or compete)
+across three roles to push the *same* flight out on time for five consecutive
+turns.  Decisions revolve around gate strategy, crew buffers, and maintenance
+fix/deferral.  Costs are measured in delay minutes, crew overtime, gate fees,
+and maintenance penalties.
+
+Roles & Decisions
+-----------------
+* **Airport Ops** – Gate Strategy
+    - Dedicated Gate  : +$500 fee, no gate conflict delay
+    - Shared Gate     : $0 fee, 50% chance of 10‑min conflict delay
+
+* **Airline Control** – Crew Buffer
+    - No Buffer       : 30‑min crew change; 40% chance crew timeout (adds 15‑min)
+    - Buffer 10       : 40‑min crew change (+10 ground minutes) but zero timeout risk
+
+* **Maintenance** – MEL Fix vs Deferral
+    - Fix Now         : +20‑min delay, +$300 labour, avoids MEL penalty
+    - Defer           : 20% chance penalty $1000 if deferred item escalates
+
+Each round has an **Event Card** adding a random disruption (e.g., ramp
+congestion, weather) worth 0–15 minutes.
+
+On‑time threshold is 45 minutes of ground time.  Every minute over 45 costs $100
+(passenger comp, missed slots, etc.).  Lowest total cost after 5 rounds wins.
+
+Deployment
+----------
+1.  pip install streamlit pandas
+2.  streamlit run flight_turn_app.py
+3.  Deploy to Streamlit Cloud exactly like aeroflow_app.py (requirements.txt is
+    unchanged).
 """
-AeroFlow Simulation – Streamlit Web App (v0.1)
-------------------------------------------------
-This is a lightweight, single‑file Streamlit implementation of the
-7‑week, three‑layer aviation MIS simulation you’ve been running in Excel.
+import random
+from typing import Dict
 
-How to run locally:
-    1.  Install Streamlit →  pip install streamlit pandas
-    2.  Save this file as  aeroflow_app.py
-    3.  Execute         →  streamlit run aeroflow_app.py
-
-How to deploy to Streamlit Cloud:
-    •  Push this file to a public GitHub repo.
-    •  In streamlit.io, create a new app pointing to  aeroflow_app.py.
-    •  Set the app’s *Secrets* with  INITIAL_INVENTORY  or tweak inside code.
-
-Key Features
-============
-• Three role dashboards (Airport, Airline, Aircraft) selectable via sidebar.
-• Rounds advance with one click; lead‑time & cost maths auto‑recalculate.
-• Instructor‑only controls (password gate) for demand shocks & KPI reset.
-• Live KPI scoreboard across all roles.
-
-NOTE:  This is a minimal viable product.  Feel free to extend:
-      – Add authentication for named students.
-      – Persist state in a DB instead of Streamlit session_state.
-      – Export CSV/PDF after each class.
-"""
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
-# ---------- Config ---------- #
-ROLES = ["Airport_Ops", "Airline_Ops", "Aircraft_MX"]
+# ------------------------------ Config ----------------------------------- #
+ROLES = ["Airport_Ops", "Airline_Control", "Maintenance"]
 ROUNDS = 5
-LEAD_TIME = 2               # orders arrive two rounds later
-INITIAL_INVENTORY = 20
-HOLDING_COST = 1
-STOCKOUT_COST = 5
-INSTRUCTOR_PW = "aeroflow123"  # change in Secrets for production
+ON_TIME_MIN = 45  # scheduled ground time
+COST_PER_DELAY_MIN = 100
+GATE_FEE = 500
+MEL_FIX_COST = 300
+MEL_PENALTY = 1000
+INSTRUCTOR_PW = st.secrets.get("INSTRUCTOR_PW", "flight123")
 
-# ---------- Helper Functions ---------- #
+EVENT_CARDS = [
+    ("Smooth turn", 0),
+    ("Mild ramp congestion", 5),
+    ("Catering late", 10),
+    ("Thunderstorm nearby", 15),
+]
+
+# -------------------------- Init Session State --------------------------- #
 
 def init_state():
-    """Initialise game dataframes and global KPI table."""
-    if "game" not in st.session_state:
-        st.session_state.game = {}
+    if "turn_data" not in st.session_state:
+        st.session_state.turn_data: Dict[str, pd.DataFrame] = {}
         for role in ROLES:
             df = pd.DataFrame({
                 "Round": list(range(1, ROUNDS + 1)),
-                "StartingInv": [INITIAL_INVENTORY] + [None]*(ROUNDS-1),
-                "Incoming": [0]*ROUNDS,
-                "Demand": [5]*ROUNDS,
-                "Order": [0]*ROUNDS,
-                "EndingInv": [None]*ROUNDS,
-                "Backorder": [0]*ROUNDS,
-                "HoldCost": [0]*ROUNDS,
-                "StockoutCost": [0]*ROUNDS,
+                "Decision": [""] * ROUNDS,
+                "RoleDelay": [0] * ROUNDS,
+                "RoleCost": [0] * ROUNDS,
             })
-            st.session_state.game[role] = df
+            st.session_state.turn_data[role] = df
+        # event deck per round
+        st.session_state.events = random.choices(EVENT_CARDS, k=ROUNDS)
         st.session_state.current_round = 1
-        st.session_state.kpi = pd.DataFrame(index=ROLES, columns=["HoldCost", "StockoutCost", "TotalCost"]).fillna(0)
+        st.session_state.kpi = pd.DataFrame(index=ROLES, columns=["Delay", "Cost"]).fillna(0)
 
 
-def compute_round(role: str, round_idx: int):
-    """Recalculate inventory levels and costs for the chosen role & round."""
-    df = st.session_state.game[role]
+# ---------------------------- Logic Helpers ------------------------------ #
 
-    # Starting inventory for round 1 is preset; others inherit previous ending
-    if round_idx > 0 and pd.isna(df.loc[round_idx, "StartingInv"]):
-        df.at[round_idx, "StartingInv"] = df.at[round_idx-1, "EndingInv"]
+def apply_decision(role: str, decision: str, rnd_idx: int):
+    """Return delay minutes and cost effects of the decision."""
+    delay = 0
+    cost = 0
 
-    # Incoming shipments (arrive LEAD_TIME rounds after order)
-    incoming_idx = round_idx - LEAD_TIME
-    if incoming_idx >= 0:
-        df.at[round_idx, "Incoming"] = df.at[incoming_idx, "Order"]
+    if role == "Airport_Ops":
+        if decision == "Dedicated Gate":
+            cost += GATE_FEE
+        elif decision == "Shared Gate":
+            if random.random() < 0.5:
+                delay += 10
+    elif role == "Airline_Control":
+        if decision == "No Buffer":
+            base_delay = 30  # crew change time
+            delay += base_delay
+            if random.random() < 0.4:
+                delay += 15  # crew timeout
+        elif decision == "Buffer 10":
+            delay += 40  # adds 10‑min buffer but no timeout risk
+    elif role == "Maintenance":
+        if decision == "Fix Now":
+            delay += 20
+            cost += MEL_FIX_COST
+        elif decision == "Defer":
+            if random.random() < 0.2:
+                cost += MEL_PENALTY
+    return delay, cost
 
-    # Calculate EndingInv and Backorder
-    available = df.at[round_idx, "StartingInv"] + df.at[round_idx, "Incoming"]
-    demand = df.at[round_idx, "Demand"]
-    backorder = max(demand - available, 0)
-    ending_inv = available - demand + df.at[round_idx, "Backorder"]  # include previous backorder if any
 
-    df.at[round_idx, "Backorder"] = backorder
-    df.at[round_idx, "EndingInv"] = ending_inv
-    df.at[round_idx, "HoldCost"] = max(ending_inv, 0) * HOLDING_COST
-    df.at[round_idx, "StockoutCost"] = backorder * STOCKOUT_COST
-
-    # Update KPI table
-    st.session_state.kpi.at[role, "HoldCost"] = df["HoldCost"].sum()
-    st.session_state.kpi.at[role, "StockoutCost"] = df["StockoutCost"].sum()
-    st.session_state.kpi["TotalCost"] = st.session_state.kpi["HoldCost"] + st.session_state.kpi["StockoutCost"]
+def update_kpi(role: str):
+    df = st.session_state.turn_data[role]
+    st.session_state.kpi.at[role, "Delay"] = df["RoleDelay"].sum()
+    st.session_state.kpi.at[role, "Cost"] = df["RoleCost"].sum()
 
 
-# ---------- Streamlit UI ---------- #
+# ------------------------------ UI --------------------------------------- #
 
 def main():
-    st.title("✈️ AeroFlow MIS Simulation")
+    st.set_page_config(page_title="Flight Turn Simulation", page_icon="🛫", layout="wide")
+    st.title("🛫 Flight‑Turn MIS Simulation")
     init_state()
 
     with st.sidebar:
-        st.header("Role & Round")
-        role = st.selectbox("Select your role", ROLES)
+        st.header("Select Role & Round")
+        role = st.selectbox("Role", ROLES)
         round_num = st.session_state.current_round
         st.markdown(f"**Current Round:** {round_num}")
-        st.markdown("---")
 
-        # Instructor tools
         with st.expander("🔐 Instructor Panel"):
             pw = st.text_input("Password", type="password")
             if pw == INSTRUCTOR_PW:
-                st.success("Instructor mode enabled")
-                if st.button("Advance Round ➡️") and round_num < ROUNDS:
+                st.success("Instructor mode active")
+                if st.button("Advance Round ➡️", key="adv") and round_num < ROUNDS:
                     st.session_state.current_round += 1
-                st.number_input("Set Demand for ALL roles (this round)", min_value=0, value=5, key="new_demand")
-                if st.button("Update Demand"):
-                    for r in ROLES:
-                        st.session_state.game[r].loc[round_num-1, "Demand"] = st.session_state.new_demand
-                if st.button("🔄 Reset Game"):
-                    for key in list(st.session_state.keys()):
-                        del st.session_state[key]
+                if st.button("Reset Game", key="reset"):
+                    for k in list(st.session_state.keys()):
+                        del st.session_state[k]
                     st.experimental_rerun()
 
     st.subheader(f"{role} – Round {round_num}")
-    df = st.session_state.game[role]
+    df_role = st.session_state.turn_data[role]
 
-    # Order input for current round
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        st.write("### Decision Input")
-        order = st.number_input("Enter your Order / Action", min_value=0, step=1, key="order_input")
-        if st.button("Submit Order"):
-            df.at[round_num-1, "Order"] = order
-            compute_round(role, round_num-1)
-            st.success("Order recorded!")
+    if df_role.at[round_num - 1, "Decision"] == "":
+        # Decision input only if not already taken
+        if role == "Airport_Ops":
+            decision = st.radio("Gate Strategy", ["Dedicated Gate", "Shared Gate"])
+        elif role == "Airline_Control":
+            decision = st.radio("Crew Buffer", ["No Buffer", "Buffer 10"])
+        else:
+            decision = st.radio("MEL Decision", ["Fix Now", "Defer"])
 
-    with col2:
-        st.write("### Quick Stats")
-        st.metric("Starting Inv", df.at[round_num-1, "StartingInv"])
-        st.metric("Incoming", df.at[round_num-1, "Incoming"])
-        st.metric("Demand", df.at[round_num-1, "Demand"])
+        if st.button("Submit Decision"):
+            delay, cost = apply_decision(role, decision, round_num - 1)
+            # Event delay applies only once globally; attach to Airport Ops record for simplicity
+            event_label, event_delay = st.session_state.events[round_num - 1]
+            if role == "Airport_Ops":
+                delay += event_delay
 
-    st.write("### Your Role Ledger")
-    st.dataframe(df.style.format({"HoldCost": "${:,.0f}", "StockoutCost": "${:,.0f}"}))
+            df_role.at[round_num - 1, "Decision"] = decision
+            df_role.at[round_num - 1, "RoleDelay"] = delay
+            df_role.at[round_num - 1, "RoleCost"] = cost + max(delay - ON_TIME_MIN, 0) * COST_PER_DELAY_MIN
+            update_kpi(role)
+            st.success("Decision recorded!")
+            st.experimental_rerun()
+    else:
+        st.info("Decision already submitted for this round.")
+
+    st.write("### Role Ledger")
+    st.dataframe(df_role)
+
+    # Show event card for info
+    st.write("### Current Event Card")
+    st.write(st.session_state.events[round_num - 1][0])
 
     st.write("---")
-    st.subheader("Class KPI Scoreboard")
-    st.dataframe(st.session_state.kpi.style.format("${:,.0f}"))
+    st.subheader("Class KPI Scoreboard (cumulative)")
+    st.dataframe(st.session_state.kpi)
 
 
 if __name__ == "__main__":
