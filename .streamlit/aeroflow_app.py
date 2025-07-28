@@ -59,20 +59,24 @@ def build_timeline(idx):
     txt, delay = st.session_state.events[idx]
     rows, start = [], 0
 
+    # Airport Ops
     ap    = st.session_state.data[ROLES[0]].loc[idx]
     ap_end = start + ap.Duration + delay
     rows.append([ROLES[0], start, ap_end])
 
+    # Airline Control
     ac     = st.session_state.data[ROLES[1]].loc[idx]
     ac_end = ap_end + ac.Duration
     rows.append([ROLES[1], ap_end, ac_end])
 
+    # Maintenance
     mx     = st.session_state.data[ROLES[2]].loc[idx]
     mx_end = ac_end + mx.Duration
     rows.append([ROLES[2], ac_end, mx_end])
 
     st.session_state.timeline[idx] = pd.DataFrame(rows, columns=["Role", "Start", "End"])
 
+    # Apply fines
     fine = max(mx_end - TARGET_MIN, 0) * FINE_PER_MIN
     for r in ROLES:
         st.session_state.data[r].at[idx, "Cost"] += fine
@@ -156,15 +160,18 @@ with tab_help:
         "A perfect turnaround is 45 minutes; each extra minute costs $100 on your ledger."
     )
     st.subheader("Each Round, step by step")
+    # AODB and CRS bullets via markdown
     st.markdown(
         "- AODB stand -\n"
-        "Dedicated Stand (pay $500, gate always free) or Shared Stand (free, but 50 % risk the gate is still busy; if it is, you sit and wait an extra 5 to 20 min chosen at random).\n"
+        "  Dedicated Stand (pay $500, gate always free) or Shared Stand (free, but 50 % risk the gate is still busy; if it is, you sit and wait an extra 5 to 20 min chosen at random).\n"
         "- CRS crew -\n"
-        "Quick Swap (30 min, 40 % chance the relief crew is late and you lose another 5 to 25 min) or Buffered Swap (40 min, guaranteed on-time).\n"
-        "- MEL decision -\n"
-        "Fix Now (add 20 min and $300) or Defer (0 min now, but there is a 40 % chance a compliance audit later fines you $1,000).\n"
-        "- Flight Event -\n"
-        "A weather, wildlife, or equipment surprise adds the delay shown in the banner.\n"
+        "  Quick Swap (30 min, 40 % chance the relief crew is late and you lose another 5 to 25 min) or Buffered Swap (40 min, guaranteed on-time).\n"
+    )
+    # MEL bullet via plain text
+    st.write("**MEL decision** - Fix Now (add 20 min and $300) or Defer (0 min now, but there is a 40 % chance a compliance audit later fines you $1,000).")
+    # Remaining bullets
+    st.markdown(
+        "- Flight Event - A weather, wildlife, or equipment surprise adds the delay shown in the banner.\n"
         "- Click Submit Decision to update all systems, see the timeline, and start the next flight."
     )
     st.subheader("Acronym Glossary")
