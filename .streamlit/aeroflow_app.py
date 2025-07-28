@@ -59,20 +59,24 @@ def build_timeline(idx):
     txt, delay = st.session_state.events[idx]
     rows, start = [], 0
 
+    # Airport Ops block
     ap = st.session_state.data[ROLES[0]].loc[idx]
     ap_end = start + ap.Duration + delay
     rows.append([ROLES[0], start, ap_end])
 
+    # Airline Control block
     ac = st.session_state.data[ROLES[1]].loc[idx]
     ac_end = ap_end + ac.Duration
     rows.append([ROLES[1], ap_end, ac_end])
 
+    # Maintenance block
     mx = st.session_state.data[ROLES[2]].loc[idx]
     mx_end = ac_end + mx.Duration
     rows.append([ROLES[2], ac_end, mx_end])
 
     st.session_state.timeline[idx] = pd.DataFrame(rows, columns=["Role", "Start", "End"])
 
+    # Apply late fine
     fine = max(mx_end - TARGET_MIN, 0) * FINE_PER_MIN
     for r in ROLES:
         st.session_state.data[r].at[idx, "Cost"] += fine
@@ -155,7 +159,7 @@ with tab_help:
     st.markdown(
         "Turn five late flights quickly and economically while juggling three MIS tools.  \n"
         "Every choice you enter in AODB, CRS, or MEL ripples to the next role.  \n"
-        "A perfect turnaround is **45 minutes**; each extra minute costs **$100** on your ledger."
+        "A perfect turnaround is 45 minutes; each extra minute costs $100 on your ledger."
     )
     st.subheader("Each Round, step by step")
     st.markdown(
@@ -187,6 +191,7 @@ with tab_play:
     )
     st.session_state.role_pick = role
 
+    # Live KPIs
     col1, col2 = st.columns(2)
     col1.metric("Your Cost", f"${int(st.session_state.data[role]['Cost'].sum()):,}")
     gtime = (
@@ -196,9 +201,11 @@ with tab_play:
     )
     col2.metric("Ground Time", f"{gtime} min", delta=f"{gtime - TARGET_MIN:+}")
 
+    # Flight Event banner
     evt_txt, evt_delay = st.session_state.events[st.session_state.round - 1]
     st.warning(f"Flight Event - {evt_txt} (+{evt_delay} min)")
 
+    # Decision input
     if st.session_state.data[role].at[st.session_state.round - 1, "Decision"] == "-":
         choice = st.radio("Choose your MIS update", option_labels(role))
         if st.button("Submit Decision"):
@@ -217,6 +224,7 @@ with tab_play:
     else:
         st.info("Waiting for first flight to finish...")
 
+    # Instructor controls at bottom
     with st.expander("Instructor controls"):
         pw = st.text_input("Password", type="password")
         if pw == INSTRUCTOR_PW:
@@ -229,6 +237,7 @@ with tab_play:
                     del st.session_state[k]
                 st.rerun()
 
+    # Game-over summary
     if all(b is not None for b in st.session_state.timeline):
         st.balloons()
         st.success("GAME OVER")
