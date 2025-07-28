@@ -1,200 +1,253 @@
-"""MMIS 494 Flight Turn Simulation – Streamlit App (v0.6a)
+"""
+MMIS 494 Flight Turn Simulation – Integrated Timeline Edition (v1.0)
+---------------------------------------------------------------------
+A single–page Streamlit app where three student roles (Airport Ops,
+Airline Control, Maintenance) coordinate the turnaround timeline for one
+flight.  Tasks run **sequentially** – Airport work, then Airline crew, then
+Maintenance – so every extra minute added by an early role pushes the
+whole schedule and the final delay fine is shared by all.
 
-Restores sidebar Game Facts and opens on Play tab by default.
-Includes end-of-game recap and visible MEL penalties.
+Key Features
+============
+• **Event cards** – five unique disruptions per game chosen at random.
+• **Integrated timeline board** – after each round students see a Gantt‑style
+  table showing start & end times for every task.
+• **Shared delay fine** – if total ground time exceeds 45 min the extra
+  minutes are fined at $100 each and split evenly across the three roles.
+• **Maintenance "Defer" now has a 40 % penalty risk; board shows whether it
+  hit or missed (Notes column).
+• Automatic *Game Over* recap once all roles have submitted in Round 5.
+
+Quick Start
+-----------
+1.  `pip install streamlit pandas`
+2.  `streamlit run mmis494_flight_turn_sim.py`
+3.  Deploy to Streamlit Cloud like any single‑file app.
 """
 
 import random
-from typing import Dict
+from typing import Dict, List
 
 import pandas as pd
 import streamlit as st
 
-# ───────────────────────── Config ───────────────────────────── #
+# ───────────────── Config ────────────────── #
 ROLES = ["Airport_Ops", "Airline_Control", "Maintenance"]
 ROUNDS = 5
 ON_TIME_MIN = 45
-COST_PER_DELAY_MIN = 100
+FINE_PER_MIN = 100
+
+# Task durations (baseline minutes)
+AIRPORT_PRIVATE = 10  # dedicated gate
+AIRPORT_SHARED = 10   # base + possible clash delay later
+CREW_NO_BUFFER = 30   # plus possible +15
+CREW_BUFFER_10 = 40
+MX_FIX = 20
+MX_DEFER = 0
+
 GATE_FEE = 500
-MEL_FIX_COST = 300
-MEL_PENALTY = 1000
-PENALTY_PROB = 0.2  # 20 %
+MX_FIX_COST = 300
+MX_PENALTY = 1000
+MX_PENALTY_PROB = 0.4
+
+EVENT_CARDS = [
+    ("Wildlife on runway – crews scare birds", 8),
+    ("Fuel truck stuck in traffic", 12),
+    ("Ground crew shortage", 9),
+    ("De‑icing needed", 15),
+    ("Baggage belt jam", 7),
+    ("Gate power outage", 10),
+    ("Catering cart spills soup", 6),
+    ("Thunderstorm cell overhead", 11),
+]
 
 INSTRUCTOR_PW = st.secrets.get("INSTRUCTOR_PW", "flight123")
 
-EVENT_CARDS = [
-    ("Smooth turn", 0),
-    ("Busy ramp", 5),
-    ("Catering truck late", 10),
-    ("Thunderstorm nearby", 15),
-]
+# ─────────────── Helpers ──────────────── #
 
-# ───────────────────── Session-state init ───────────────────── #
 def init_state():
-    if "turn_data" not in st.session_state:
-        st.session_state.turn_data = {}
-        for role in ROLES:
-            st.session_state.turn_data[role] = pd.DataFrame(
+    if "round_data" not in st.session_state:
+        # one master df per role to keep raw decisions & results
+        st.session_state.round_data: Dict[str, pd.DataFrame] = {
+            r: pd.DataFrame(
                 {
                     "Round": range(1, ROUNDS + 1),
-                    "Decision": ["-"] * ROUNDS,
-                    "RoleDelay": [0] * ROUNDS,
-                    "RoleCost": [0] * ROUNDS,
-                    "Notes": [""] * ROUNDS,
+                    "Decision": "-",
+                    "Duration": 0,
+                    "Cost": 0,
+                    "Notes": "",
                 }
             )
-        st.session_state.events = random.choices(EVENT_CARDS, k=ROUNDS)
+            for r in ROLES
+        }
+        st.session_state.events = random.sample(EVENT_CARDS, k=ROUNDS)
         st.session_state.current_round = 1
-        st.session_state.kpi = pd.DataFrame(index=ROLES,
-                                            columns=["Delay", "Cost"]).fillna(0)
-
-# ───────────────────── Decision logic ──────────────────────── #
-def apply_decision(role, decision):
-    delay = 0
-    cost = 0
-    note = ""
-    if role == "Airport_Ops":
-        if decision == "Dedicated Gate":
-            cost += GATE_FEE
-        elif random.random() < 0.5:
-            delay += 10
-            note = "+10 ramp clash"
-    elif role == "Airline_Control":
-        if decision == "No Buffer":
-            delay += 30
-            if random.random() < 0.4:
-                delay += 15
-                note = "+15 crew late"
-        else:
-            delay += 40
-    else:  # Maintenance
-        if decision == "Fix Now":
-            delay += 20
-            cost += MEL_FIX_COST
-        elif random.random() < PENALTY_PROB:
-            cost += MEL_PENALTY
-            note = "Penalty $1 000"
-    return delay, cost, note
+        # timeline board list each round: will fill later
+        st.session_state.timeline: List[pd.DataFrame] = [None] * ROUNDS
+        st.session_state.shared_fines = [0] * ROUNDS
 
 
-def update_kpi(role):
-    df = st.session_state.turn_data[role]
-    st.session_state.kpi.at[role, "Delay"] = df["RoleDelay"].sum()
-    st.session_state.kpi.at[role, "Cost"] = df["RoleCost"].sum()
-
-def game_finished():
-    if st.session_state.current_round < ROUNDS:
-        return False
-    return all("-" not in df["Decision"].values
-               for df in st.session_state.turn_data.values())
-
-# ───────────────────── Simulation UI ──────────────────────── #
-def simulation_ui():
-    role = st.sidebar.selectbox("Choose your role", ROLES)
-    rnd = st.session_state.current_round
-    st.sidebar.markdown(f"**Round:** {rnd} / {ROUNDS}")
-
-    # Game facts block (returned)
-    st.sidebar.markdown(
-        "### Game Facts\n"
-        f"- On-time goal: **{ON_TIME_MIN} min**\n"
-        f"- Delay fine: **${COST_PER_DELAY_MIN}** per extra minute\n"
-        f"- Private gate fee: **${GATE_FEE}**\n"
-        f"- Fix-now cost: **${MEL_FIX_COST}**\n"
-        f"- Deferred penalty: **${MEL_PENALTY}**"
+def decisions_complete(round_idx: int) -> bool:
+    return all(
+        st.session_state.round_data[r].at[round_idx, "Decision"] != "-"
+        for r in ROLES
     )
 
-    # Instructor panel
-    with st.sidebar.expander("Instructor", False):
-        pw = st.text_input("Password", type="password")
-        if pw == INSTRUCTOR_PW:
-            st.success("Instructor mode")
-            if st.button("Next Round ➡️") and rnd < ROUNDS:
-                st.session_state.current_round += 1
-                st.rerun()
-            if st.button("Reset Game"):
-                for key in list(st.session_state.keys()):
-                    del st.session_state[key]
-                st.rerun()
 
-    st.subheader(f"{role} – Round {rnd}")
+def build_timeline(round_idx: int):
+    """Compute start/end times sequentially and shared fine."""
+    start = 0
+    rows = []
+    # Airport first
+    ap_dec = st.session_state.round_data["Airport_Ops"].loc[round_idx]
+    evt_label, evt_delay = st.session_state.events[round_idx]
+    ap_dur = ap_dec.Duration + evt_delay
+    ap_end = start + ap_dur
+    rows.append(["Airport_Ops", start, ap_end])
 
-    label, evt_delay = st.session_state.events[rnd - 1]
-    st.warning(f"EVENT: {label} (+{evt_delay} min)")
+    # Airline second
+    al_dec = st.session_state.round_data["Airline_Control"].loc[round_idx]
+    al_start = ap_end
+    al_end = al_start + al_dec.Duration
+    rows.append(["Airline_Control", al_start, al_end])
 
-    df_role = st.session_state.turn_data[role]
+    # Maintenance last
+    mx_dec = st.session_state.round_data["Maintenance"].loc[round_idx]
+    mx_start = al_end
+    mx_end = mx_start + mx_dec.Duration
+    rows.append(["Maintenance", mx_start, mx_end])
 
-    if df_role.at[rnd - 1, "Decision"] == "-":
-        # Choices
-        if role == "Airport_Ops":
-            st.markdown("- Private Gate: $500, 0 delay\n"
-                        "- Shared Gate: $0, 50% risk +10 min")
-            decision = st.radio("", ["Dedicated Gate", "Shared Gate"])
-        elif role == "Airline_Control":
-            st.markdown("- No Buffer: 30 min, 40% risk +15 min\n"
-                        "- Buffer 10: 40 min, safe")
-            decision = st.radio("", ["No Buffer", "Buffer 10"])
-        else:
-            st.markdown("**MEL = Minimum Equipment List**\n"
-                        "- Fix Now: +20 min, $300\n"
-                        "- Defer: 0 delay, 20% chance $1 000")
-            decision = st.radio("", ["Fix Now", "Defer"])
+    board = pd.DataFrame(rows, columns=["Role", "Start", "End"])
 
-        if st.button("Submit Decision"):
-            delay, cost, note = apply_decision(role, decision)
-            if role == "Airport_Ops":
-                delay += evt_delay
-            total = cost + max(delay - ON_TIME_MIN, 0) * COST_PER_DELAY_MIN
-            df_role.loc[rnd - 1, ["Decision", "RoleDelay",
-                                  "RoleCost", "Notes"]] = [decision,
-                                                            delay, total, note]
-            update_kpi(role)
-            st.success(f"Saved: +{delay} min, +${total}")
-            st.rerun()
-    else:
-        st.info("Decision already submitted.")
-
-    st.dataframe(df_role, use_container_width=True, height=200)
-
-    st.write("---")
-    st.subheader("Cumulative KPI")
-    st.dataframe(st.session_state.kpi.style.format({"Cost": "${:,.0f}"}))
-
-    st.bar_chart(st.session_state.kpi["Cost"])
-    st.bar_chart(st.session_state.kpi["Delay"])
-
-    # Line chart of total cost per round
-    total_costs = [
-        sum(df.at[i, "RoleCost"] for df in st.session_state.turn_data.values())
-        for i in range(ROUNDS)
-    ]
-    st.line_chart(pd.DataFrame({"Total Cost": total_costs}))
-
-    # Recap banner
-    if game_finished():
-        st.success("🎉 Game Over – Final Results")
+    # Shared fine if total ground time > threshold
+    total_time = mx_end
+    excess = max(total_time - ON_TIME_MIN, 0)
+    fine = excess * FINE_PER_MIN
+    st.session_state.shared_fines[round_idx] = fine
+    if fine > 0:
         for r in ROLES:
-            st.write(f"#### {r}")
-            st.dataframe(st.session_state.turn_data[r]
-                         .style.format({"RoleCost": "${:,.0f}"}))
-        grand_cost = st.session_state.kpi["Cost"].sum()
-        grand_delay = st.session_state.kpi["Delay"].sum()
-        st.info(f"Team Final Cost: **${grand_cost:,.0f}**   |   "
-                f"Total Delay: **{grand_delay} min**")
+            st.session_state.round_data[r].at[round_idx, "Cost"] += fine / 3
+    st.session_state.timeline[round_idx] = board
 
-# ───────────────────────── Main page ───────────────────────── #
+
+def record_decision(role: str, round_idx: int, decision: str):
+    evt_label, evt_delay = st.session_state.events[round_idx]
+    df = st.session_state.round_data[role]
+
+    # Airport decisions
+    if role == "Airport_Ops":
+        if decision == "Dedicated Gate":
+            dur, cost, note = AIRPORT_PRIVATE, GATE_FEE, "Private gate"
+        else:
+            dur, cost, note = AIRPORT_SHARED, 0, "Shared gate"
+            if random.random() < 0.5:
+                dur += 10
+                note += " (+10 clash)"
+    # Airline decisions
+    elif role == "Airline_Control":
+        if decision == "No Buffer":
+            dur, cost, note = CREW_NO_BUFFER, 0, "No buffer"
+            if random.random() < 0.4:
+                dur += 15
+                note += " (+15 late crew)"
+        else:
+            dur, cost, note = CREW_BUFFER_10, 0, "Buffer 10"
+    # Maintenance decisions
+    else:
+        if decision == "Fix Now":
+            dur, cost, note = MX_FIX, MX_FIX_COST, "Fixed now"
+        else:
+            dur, cost, note = MX_DEFER, 0, "Defer"
+            if random.random() < MX_PENALTY_PROB:
+                cost += MX_PENALTY
+                note += " – Penalty $1k"
+            else:
+                note += " – No penalty"
+
+    df.loc[round_idx, ["Decision", "Duration", "Cost", "Notes"]] = [
+        decision,
+        dur,
+        cost,
+        note,
+    ]
+
+    # If now all three roles decided, build timeline
+    if decisions_complete(round_idx):
+        build_timeline(round_idx)
+        st.session_state.current_round = min(round_idx + 2, ROUNDS)
+
+
+# ═════════════════════ UI ════════════════════════ #
+
+def role_panel(role: str, round_idx: int):
+    df = st.session_state.round_data[role]
+    if df.at[round_idx, "Decision"] != "-":
+        st.info("Decision already submitted.")
+        return
+
+    if role == "Airport_Ops":
+        st.radio("Choose gate plan:", ["Dedicated Gate", "Shared Gate"],
+                 key="ap_pick")
+    elif role == "Airline_Control":
+        st.radio("Choose crew plan:", ["No Buffer", "Buffer 10"],
+                 key="al_pick")
+    else:
+        st.radio("Maintenance decision:", ["Fix Now", "Defer"],
+                 key="mx_pick")
+
+
+# Main page
+
 def main():
     st.set_page_config(page_title="MMIS 494 Flight Turn Simulation",
                        page_icon="🛫", layout="wide")
-    st.title("🛫 MMIS 494 Flight Turn Simulation")
+    st.title("🛫 MMIS 494 Flight Turn Simulation – Integrated Timeline")
     init_state()
 
-    # Open on Play tab first so sidebar always displays
-    tab_play, tab_how = st.tabs(["Play the Game", "How to Play"])
-    with tab_how:
-        st.write("Rules in sidebar and during play.")
-    with tab_play:
-        simulation_ui()
+    current_round = st.session_state.current_round
+    round_idx = current_round - 1
+
+    col_role, col_event = st.columns([2, 1])
+    with col_role:
+        role = st.selectbox("Select your role", ROLES)
+        st.markdown(f"### Round {current_round} decision – {role}")
+
+        # decision UI
+        if role == "Airport_Ops":
+            choice = st.radio("Gate option:", ["Dedicated Gate", "Shared Gate"])
+        elif role == "Airline_Control":
+            choice = st.radio("Crew option:", ["No Buffer", "Buffer 10"])
+        else:
+            choice = st.radio("Maintenance option:", ["Fix Now", "Defer"])
+        if st.button("Submit"):
+            record_decision(role, round_idx, choice)
+            st.rerun()
+
+    with col_event:
+        lbl, dly = st.session_state.events[round_idx]
+        st.warning(f"**EVENT**\n{lbl}\n(+{dly} min)")
+
+    st.write("---")
+    st.markdown("## Round timeline board")
+    if st.session_state.timeline[round_idx] is not None:
+        st.dataframe(st.session_state.timeline[round_idx])
+    else:
+        st.info("Waiting for all roles to decide…")
+
+    st.write("---")
+    st.markdown("## Cumulative KPIs")
+    kpi = st.session_state.kpi.copy()
+    kpi["Cost"] = kpi["Cost"].apply(lambda x: f"${x:,.0f}")
+    st.dataframe(kpi)
+
+    if game_finished():
+        st.success("🎉 Game Over – see final timeline and costs below")
+        for i in range(ROUNDS):
+            st.write(f"### Timeline Round {i+1}")
+            st.dataframe(st.session_state.timeline[i])
+        total_cost = sum(kpi_row for kpi_row in st.session_state.kpi["Cost"].apply(lambda x: int(x.replace("$", "").replace(",", ""))))
+        total_delay = st.session_state.timeline[-1]["End"].max()
+        st.info(f"Final total cost: ${total_cost:,.0f} – Final ground time: {total_delay} min")
 
 
 if __name__ == "__main__":
