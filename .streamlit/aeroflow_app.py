@@ -14,10 +14,10 @@ CREW_NB, CREW_B10  = 30, 40
 MX_FIX,  MX_DEF    = 20, 0
 
 # Costs (dollars)
-GATE_FEE = 500
-MX_FIX_COST = 300
-MX_PENALTY  = 1000
-MX_PEN_PROB = 0.4
+GATE_FEE     = 500
+MX_FIX_COST  = 300
+MX_PENALTY   = 1000
+MX_PEN_PROB  = 0.4
 
 EVENT_CARDS = [
     ("Wildlife on the runway - bird hazard.", 8),
@@ -31,6 +31,7 @@ EVENT_CARDS = [
 ]
 
 INSTRUCTOR_PW = st.secrets.get("INSTRUCTOR_PW", "flight123")
+
 
 # ---------- STATE ----------
 def init_state():
@@ -49,6 +50,7 @@ def init_state():
         st.session_state.round     = 1
         st.session_state.role_pick = ROLES[0]
 init_state()
+
 
 # ---------- LOGIC ----------
 def everyone_done(idx):
@@ -97,7 +99,7 @@ def record(role, idx, choice):
             note = "Quick swap" + (f" +{extra}" if delay_happens else "")
         else:
             dur, cost, note = CREW_B10, 0, "Buffered swap"
-    else:  # Maintenance
+    else:
         if "Fix Now" in choice:
             dur, cost, note = MX_FIX, MX_FIX_COST, "Immediate fix"
         else:
@@ -118,12 +120,13 @@ def latest_time():
     return boards[-1]["End"].max() if boards else 0
 
 def current_ground_time():
-    idx = st.session_state.round - 1
+    idx   = st.session_state.round - 1
     delay = st.session_state.events[idx][1]
     total = delay
     for r in ROLES:
         total += st.session_state.data[r].at[idx, "Duration"]
     return total
+
 
 # ---------- UI LABELS ----------
 def option_labels(role):
@@ -135,12 +138,13 @@ def option_labels(role):
     if role == ROLES[1]:
         return (
             "CRS: Quick Crew Swap (30 min - 40 % risk +5-25 min)",
-            "CRS: Buffered Crew Swap (40 min - guaranteed on time)",
+            "CRS: Buffered Crew Swap (40 min - guaranteed on-time)",
         )
     return (
         "MEL: Fix Now (+20 min, $300)",
         "MEL: Defer (0 min - 40 % risk $1,000)",
     )
+
 
 # ---------- PAGE ----------
 st.set_page_config("MMIS 494 Aviation MIS Simulation", "🛫", layout="wide")
@@ -158,13 +162,15 @@ with tab_help:
     )
     st.subheader("Each Round, step by step")
     st.markdown(
-        "- **AODB stand** - Dedicated Stand (pay $500, gate always free) or Shared Stand "
-        "(free but 50 % risk; wait +5-20 min if busy).  \n"
-        "- **CRS crew** - Quick Swap (30 min, 40 % risk +5-25 min) or Buffered Swap "
-        "(40 min, guaranteed on time).  \n"
-        "- **MEL decision** - Fix Now (+20 min & $300) or Defer (0 min now, 40 % risk $1,000 penalty).  \n"
-        "- **Flight Event** - banner shows extra delay.  \n"
-        "- Click **Submit Decision** to update all systems and start the next flight."
+        "- AODB stand –\n"
+        "Dedicated Stand (pay $500, gate always free) or Shared Stand (free, but 50 % risk the gate is still busy; if it is, you sit and wait an extra 5 to 20 min chosen at random).\n\n"
+        "- CRS crew –\n"
+        "Quick Swap (30 min, 40 % chance the relief crew is late and you lose another 5 to 25 min) or Buffered Swap (40 min, guaranteed on-time).\n\n"
+        "- MEL decision –\n"
+        "Fix Now (add 20 min and $300) or Defer (0 min now, but there's a 40 % chance a compliance audit later fines you $1,000).\n\n"
+        "- Flight Event –\n"
+        "A weather, wildlife, or equipment surprise adds the delay shown in the banner.\n\n"
+        "- Click Submit Decision to update all systems, see the timeline, and start the next flight."
     )
     st.subheader("Acronym Glossary")
     st.markdown(
@@ -178,7 +184,8 @@ with tab_play:
     st.header(f"Flight {st.session_state.round}")
 
     role = st.selectbox(
-        "Select your role for this update", ROLES,
+        "Select your role for this update",
+        ROLES,
         index=ROLES.index(st.session_state.role_pick)
     )
     st.session_state.role_pick = role
@@ -186,9 +193,11 @@ with tab_play:
     # Live KPIs
     col1, col2 = st.columns(2)
     col1.metric("Your Cost", f"${int(st.session_state.data[role]['Cost'].sum()):,}")
-    gtime = (latest_time()
-             if st.session_state.timeline[st.session_state.round-1] is not None
-             else current_ground_time())
+    gtime = (
+        latest_time()
+        if st.session_state.timeline[st.session_state.round - 1] is not None
+        else current_ground_time()
+    )
     col2.metric("Ground Time", f"{gtime} min", delta=f"{gtime - TARGET_MIN:+}")
 
     # Event banner
@@ -208,7 +217,7 @@ with tab_play:
     st.dataframe(st.session_state.data[role].drop(columns="Round"))
 
     st.subheader("Timeline Board")
-    board = next((b for b in reversed(st.session_state.timeline) if b), None)
+    board = next((b for b in reversed(st.session_state.timeline) if b is not None), None)
     if board is not None:
         st.dataframe(board)
     else:
@@ -227,12 +236,12 @@ with tab_play:
                     del st.session_state[k]
                 st.rerun()
 
-    # Game over summary
-    if all(b for b in st.session_state.timeline):
+    # Game-over summary
+    if all(b is not None for b in st.session_state.timeline):
         st.balloons()
         st.success("GAME OVER")
         summary = pd.DataFrame({
-            "Role": ROLES,
+            "Role":  ROLES,
             "Total $": [int(st.session_state.data[r]["Cost"].sum()) for r in ROLES]
         }).sort_values("Total $").reset_index(drop=True)
         st.table(summary)
