@@ -19,6 +19,7 @@ MX_FIX_COST  = 300
 MX_PENALTY   = 1000
 MX_PEN_PROB  = 0.4
 
+# Flight events
 EVENT_CARDS = [
     ("Wildlife on the runway - bird hazard.", 8),
     ("Fuel truck stuck in traffic - stand blocked.", 12),
@@ -31,7 +32,6 @@ EVENT_CARDS = [
 ]
 
 INSTRUCTOR_PW = st.secrets.get("INSTRUCTOR_PW", "flight123")
-
 
 # ---------- STATE ----------
 def init_state():
@@ -50,7 +50,6 @@ def init_state():
         st.session_state.round     = 1
         st.session_state.role_pick = ROLES[0]
 init_state()
-
 
 # ---------- LOGIC ----------
 def everyone_done(idx):
@@ -112,7 +111,7 @@ def record(role, idx, choice):
 
     if everyone_done(idx):
         build_timeline(idx)
-        st.session_state.round = min(idx + 2, ROUNDS)
+        st.session_state.round     = min(idx + 2, ROUNDS)
         st.session_state.role_pick = ROLES[0]
 
 def latest_time():
@@ -126,7 +125,6 @@ def current_ground_time():
     for r in ROLES:
         total += st.session_state.data[r].at[idx, "Duration"]
     return total
-
 
 # ---------- UI LABELS ----------
 def option_labels(role):
@@ -145,7 +143,6 @@ def option_labels(role):
         "MEL: Defer (0 min - 40 % risk $1,000)",
     )
 
-
 # ---------- PAGE ----------
 st.set_page_config("MMIS 494 Aviation MIS Simulation", "🛫", layout="wide")
 st.title("🛫 MMIS 494 Aviation MIS Simulation")
@@ -157,18 +154,18 @@ with tab_help:
     st.header("Your Mission")
     st.markdown(
         "Turn five late flights quickly and economically while juggling three MIS tools.  \n"
-        "Every choice you enter in **AODB**, **CRS**, or **MEL** ripples to the next role.  \n"
+        "Every choice you enter in AODB, CRS, or MEL ripples to the next role.  \n"
         "A perfect turnaround is **45 minutes**; each extra minute costs **$100** on your ledger."
     )
     st.subheader("Each Round, step by step")
     st.markdown(
-        "- AODB stand –\n"
+        "- AODB stand -\n"
         "Dedicated Stand (pay $500, gate always free) or Shared Stand (free, but 50 % risk the gate is still busy; if it is, you sit and wait an extra 5 to 20 min chosen at random).\n\n"
-        "- CRS crew –\n"
+        "- CRS crew -\n"
         "Quick Swap (30 min, 40 % chance the relief crew is late and you lose another 5 to 25 min) or Buffered Swap (40 min, guaranteed on-time).\n\n"
-        "- MEL decision –\n"
+        "- MEL decision -\n"
         "Fix Now (add 20 min and $300) or Defer (0 min now, but there's a 40 % chance a compliance audit later fines you $1,000).\n\n"
-        "- Flight Event –\n"
+        "- Flight Event -\n"
         "A weather, wildlife, or equipment surprise adds the delay shown in the banner.\n\n"
         "- Click Submit Decision to update all systems, see the timeline, and start the next flight."
     )
@@ -190,7 +187,6 @@ with tab_play:
     )
     st.session_state.role_pick = role
 
-    # Live KPIs
     col1, col2 = st.columns(2)
     col1.metric("Your Cost", f"${int(st.session_state.data[role]['Cost'].sum()):,}")
     gtime = (
@@ -200,11 +196,9 @@ with tab_play:
     )
     col2.metric("Ground Time", f"{gtime} min", delta=f"{gtime - TARGET_MIN:+}")
 
-    # Event banner
     evt_txt, evt_delay = st.session_state.events[st.session_state.round - 1]
     st.warning(f"Flight Event - {evt_txt} (+{evt_delay} min)")
 
-    # Decision
     if st.session_state.data[role].at[st.session_state.round - 1, "Decision"] == "-":
         choice = st.radio("Choose your MIS update", option_labels(role))
         if st.button("Submit Decision"):
@@ -223,12 +217,11 @@ with tab_play:
     else:
         st.info("Waiting for first flight to finish...")
 
-    # Instructor controls at bottom
     with st.expander("Instructor controls"):
         pw = st.text_input("Password", type="password")
         if pw == INSTRUCTOR_PW:
             if st.button("Next Flight"):
-                st.session_state.round = min(st.session_state.round + 1, ROUNDS)
+                st.session_state.round     = min(st.session_state.round + 1, ROUNDS)
                 st.session_state.role_pick = ROLES[0]
                 st.rerun()
             if st.button("Reset Game"):
@@ -236,12 +229,11 @@ with tab_play:
                     del st.session_state[k]
                 st.rerun()
 
-    # Game-over summary
     if all(b is not None for b in st.session_state.timeline):
         st.balloons()
         st.success("GAME OVER")
         summary = pd.DataFrame({
-            "Role":  ROLES,
+            "Role":   ROLES,
             "Total $": [int(st.session_state.data[r]["Cost"].sum()) for r in ROLES]
         }).sort_values("Total $").reset_index(drop=True)
         st.table(summary)
