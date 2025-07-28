@@ -151,9 +151,10 @@ with tab_help:
         "  • **No Buffer** – 30-min swap, **40 % chance** the relief crew is late (+15 min).  \n"
         "  • **Buffer 10** – safer, always 40 min (adds 10 min but no surprises).\n\n"
         "- **Aircraft Maintenance – Wrench Wizards**  \n"
-        "  You tackle pilot snags, from sticky flaps to broken coffee makers.  \n"
-        "  • **Fix Now** – +20 min, pay $300.  \n"
-        "  • **Defer** – 0 min now, **40 % chance** of a $1 000 penalty later."
+"  You tackle pilot snags, from sticky flaps to broken coffee makers.  \n"
+"- **Fix Now** – add 20 min and pay $300.  \n"
+"- **Defer** – zero minutes now, 40 % chance of a $1 000 penalty later."
+
     )
     st.markdown(f"*Every minute past **{ON_TIME_MIN}** costs **you** **${FINE_PER_MIN}**.*")
 
