@@ -7,7 +7,7 @@ ROUNDS = 5
 ON_TIME_MIN = 45
 FINE_PER_MIN = 100
 GATE_PVT, GATE_SHR = 10, 10
-CREW_NB,  CREW_B10 = 30, 40
+CREW_NB, CREW_B10  = 30, 40
 MX_FIX,  MX_DEF    = 20, 0
 GATE_FEE = 500
 MX_FIX_COST = 300
@@ -122,7 +122,7 @@ st.title("🛫 MMIS 494 Aviation MIS Simulation")
 
 tab_help, tab_play = st.tabs(["How to Play","Play"])
 
-# ----- HELP TAB ---- (unchanged from previous version) ----
+# ----- HELP TAB ----
 with tab_help:
     st.header("Your Mission")
     st.markdown(
@@ -151,10 +151,9 @@ with tab_help:
         "  • **No Buffer** – 30-min swap, **40 % chance** the relief crew is late (+15 min).  \n"
         "  • **Buffer 10** – safer, always 40 min (adds 10 min but no surprises).\n\n"
         "- **Aircraft Maintenance – Wrench Wizards**  \n"
-"  You tackle pilot snags, from sticky flaps to broken coffee makers.  \n"
-"- **Fix Now** – add 20 min and pay $300.  \n"
-"- **Defer** – zero minutes now, 40 % chance of a $1 000 penalty later."
-
+        "  You tackle pilot snags, from sticky flaps to broken coffee makers.  \n"
+        "- **Fix Now** – add 20 min and pay $300.  \n"
+        "- **Defer** – zero minutes now, 40 % chance of a $1 000 penalty later."
     )
     st.markdown(f"*Every minute past **{ON_TIME_MIN}** costs **you** **${FINE_PER_MIN}**.*")
 
@@ -184,7 +183,6 @@ with tab_play:
     else:
         st.info("Waiting for remaining roles...")
 
-    # GAME OVER recap
     if all(b is not None for b in st.session_state.timeline):
         st.balloons(); st.success("GAME OVER")
         summary = pd.DataFrame({
