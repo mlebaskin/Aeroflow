@@ -105,6 +105,7 @@ def record(role, idx, choice):
             if random.random() < MX_PEN_PROB:
                 cost += MX_PENALTY
                 note += " penalty 1000"
+
     df.loc[idx, ["Decision", "Duration", "Cost", "Notes"]] = [choice, dur, int(cost), note]
     if everyone_done(idx):
         build_timeline(idx)
@@ -156,15 +157,19 @@ with tab_help:
     )
     st.subheader("Each Round, step by step")
     st.markdown(
-        "- AODB stand -\n"
-        "Dedicated Stand (pay $500, gate always free) or Shared Stand (free, but 50 % risk the gate is still busy; if it is, you sit and wait an extra 5 to 20 min chosen at random).\n\n"
-        "- CRS crew -\n"
-        "Quick Swap (30 min, 40 % chance the relief crew is late and you lose another 5 to 25 min) or Buffered Swap (40 min, guaranteed on-time).\n\n"
-        "- MEL decision -\n"
-        "Fix Now (add 20 min and $300) or Defer (0 min now, but there's a 40 % chance a compliance audit later fines you $1,000).\n\n"
-        "- Flight Event -\n"
-        "A weather, wildlife, or equipment surprise adds the delay shown in the banner.\n\n"
-        "- Click Submit Decision to update all systems, see the timeline, and start the next flight."
+        """- AODB stand -
+Dedicated Stand (pay $500, gate always free) or Shared Stand (free, but 50 % risk the gate is still busy; if it is, you sit and wait an extra 5 to 20 min chosen at random).
+
+- CRS crew -
+Quick Swap (30 min, 40 % chance the relief crew is late and you lose another 5 to 25 min) or Buffered Swap (40 min, guaranteed on-time).
+
+- MEL decision -
+Fix Now (add 20 min and $300) or Defer (0 min now, but there's a 40 % chance a compliance audit later fines you $1,000).
+
+- Flight Event -
+A weather, wildlife, or equipment surprise adds the delay shown in the banner.
+
+- Click Submit Decision to update all systems, see the timeline, and start the next flight."""
     )
     st.subheader("Acronym Glossary")
     st.markdown(
