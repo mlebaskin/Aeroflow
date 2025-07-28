@@ -128,27 +128,50 @@ st.title("🛫 MMIS 494 Aviation MIS Simulation")
 
 tab_help, tab_play = st.tabs(["How to Play","Play"])
 
-# PLAY TAB
+# ----- HOW TO PLAY TAB (restored wording) -----
+with tab_help:
+    st.header("Your Mission")
+    st.markdown(
+        "Turn five delayed flights fast and cheap.  \n"
+        "Each flight you update three information systems: AODB gate allocation, CRS crew plan, and MEL defect log.  \n"
+        "Perfect ground time is 45 minutes; every extra minute costs $100.  \n"
+        "Spend money to avoid time—or gamble and hope delays stay short."
+    )
+    st.subheader("Each Round, step by step")
+    st.markdown(
+        '''
+        <ul style="font-family: sans-serif; font-size:1rem;">
+          <li><strong>AODB stand</strong> – Dedicated Stand (pay $500, gate always free) or Shared Stand (free, but 50% risk the gate is busy; if busy, wait 5–20 min randomly).</li>
+          <li><strong>CRS crew</strong> – Quick Swap (30 min, 40% chance relief crew is late +5–25 min) or Buffered Swap (40 min, guaranteed on-time).</li>
+          <li><strong>MEL decision</strong> – Fix Now (add 20 min & $300) or Defer (0 min now, but 40% chance a compliance audit fines you $1,000 later).</li>
+          <li><strong>Flight Event</strong> – Weather, wildlife, or equipment surprise adds the banner delay.</li>
+          <li>Click <strong>Submit Decision</strong> to update all systems, see the timeline, and start the next flight.</li>
+        </ul>
+        ''', unsafe_allow_html=True
+    )
+    st.subheader("Acronym Glossary")
+    st.write("AODB – Airport Operational Data Base")
+    st.write("CRS  – Crew Rostering System")
+    st.write("MEL  – Minimum Equipment List (defect log)")
+
+# ----- PLAY TAB -----
 with tab_play:
-    # If finished all rounds, show the game-over banner & narrative at top:
+    # Final banner + airplanes at top if done
     if all(df is not None for df in st.session_state.timeline):
-        # a row of airplane emojis
         st.markdown("<p style='font-size:2rem; text-align:center;'>✈️ ✈️ ✈️ ✈️ ✈️</p>", unsafe_allow_html=True)
         st.success(
             "GAME OVER!\n\n"
-            "You turned all five flights.  Here’s how your MIS decisions added up:\n"
-            "- Immediate costs (gate fees, fixes, audit penalties)\n"
+            "Your MIS choices led to these outcomes:\n"
+            "- Immediate costs (gates, fixes, audit penalties)\n"
             "- Time fines (every minute past 45)\n\n"
-            "Review your choices, then refresh or hit Reset to try again and see if you can shave off more minutes and dollars!",
+            "Review your decisions and reset to try for faster, cheaper turnarounds!",
             icon="✅"
         )
 
-    # Always show KPIs
+    # KPIs
     immediate = sum(st.session_state.data[r]["Cost"].sum() for r in ROLES)
     fines     = compute_time_fines()
-    gt        = (latest_time()
-                 if st.session_state.timeline[st.session_state.round-1] is not None
-                 else current_ground_time())
+    gt        = latest_time() if st.session_state.timeline[st.session_state.round-1] is not None else current_ground_time()
     c1, c2, c3 = st.columns(3)
     c1.metric("Immediate Cost", f"${int(immediate):,}")
     c2.metric("Time Fines", f"${int(fines):,}")
@@ -169,7 +192,7 @@ with tab_play:
             record(role, st.session_state.round-1, choice)
             st.rerun()
     else:
-        st.info("Decision already submitted for this role.")
+        st.info("Decision already submitted.")
 
     st.subheader("Your Ledger")
     st.dataframe(st.session_state.data[role].drop(columns="Round"))
@@ -179,7 +202,7 @@ with tab_play:
     if board is not None:
         st.dataframe(board)
     else:
-        st.info("Waiting on first flight...")
+        st.info("Waiting for first flight...")
 
     with st.expander("Instructor controls"):
         pw = st.text_input("Password", type="password")
@@ -192,7 +215,7 @@ with tab_play:
                 for k in list(st.session_state.keys()): del st.session_state[k]
                 st.rerun()
 
-    # Final summary table at the bottom (after balloons+banner above)
+    # Final summary table
     if all(df is not None for df in st.session_state.timeline):
         rows=[]
         for r in ROLES:
@@ -204,30 +227,3 @@ with tab_play:
             rows.append((r, imm, tf, imm+tf))
         summary = pd.DataFrame(rows,columns=["Role","Immediate Cost","Time Fines","Total"])
         st.table(summary.sort_values("Total").reset_index(drop=True))
-
-
-# HELP TAB
-with tab_help:
-    st.header("Your Mission")
-    st.markdown(
-        "Turn five late flights quickly and economically while juggling three MIS tools.\n"
-        "Every choice in AODB, CRS, or MEL ripples to the next role.\n"
-        "Perfect ground time is 45 min; time-over fines track separately."
-    )
-    st.subheader("Each Round, step by step")
-    st.markdown(
-        '''
-        <ul style="font-family: sans-serif; font-size:1rem;">
-          <li><strong>AODB stand</strong> – Dedicated Stand (pay $500, gate always free) or Shared Stand (free, 50% risk the gate is busy; if busy, wait 5–20 min randomly).</li>
-          <li><strong>CRS crew</strong> – Quick Swap (30 min, 40% risk +5–25 min) or Buffered Swap (40 min, guaranteed).</li>
-          <li><strong>MEL decision</strong> – Fix Now (add 20 min & $300) or Defer (0 min now, 40% risk $1,000 audit penalty).</li>
-          <li><strong>Flight Event</strong> – Weather, wildlife, or equipment surprise adds the banner delay.</li>
-          <li>Click <strong>Submit Decision</strong> to update systems and move to next flight.</li>
-        </ul>
-        ''',
-        unsafe_allow_html=True
-    )
-    st.subheader("Acronym Glossary")
-    st.write("AODB – Airport Operational Data Base")
-    st.write("CRS  – Crew Rostering System")
-    st.write("MEL  – Minimum Equipment List")
