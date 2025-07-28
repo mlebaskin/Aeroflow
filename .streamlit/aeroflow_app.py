@@ -141,20 +141,18 @@ with tab_help:
         "A perfect turnaround is 45 minutes; each extra minute costs $100 on your ledger."
     )
     st.subheader("Each Round, step by step")
-    # AODB bullet
-    st.write("- AODB stand – Dedicated Stand (pay $500, gate always free) or Shared Stand (free, but 50 % risk the gate is still busy; if it is, you sit and wait an extra 5 to 20 min chosen at random).")
-    # CRS bullet
-    st.write("- CRS crew – Quick Swap (30 min, 40 % chance the relief crew is late and you lose another 5 to 25 min) or Buffered Swap (40 min, guaranteed on-time).")
-    # MEL bullet via raw HTML forcing sans-serif
     st.markdown(
-        '<p style="font-family: sans-serif; font-size: 1rem; margin: 0;">'
-        '- MEL decision – Fix Now (add 20 min and $300) or Defer (0 min now, but there is a 40 % chance a compliance audit later fines you $1,000).'
-        '</p>',
+        '''
+        <ul style="font-family: sans-serif; font-size: 1rem;">
+          <li><strong>AODB stand</strong> – Dedicated Stand (pay $500, gate always free) or Shared Stand (free, but 50 % risk the gate is still busy; if it is, you sit and wait an extra 5 to 20 min chosen at random).</li>
+          <li><strong>CRS crew</strong> – Quick Swap (30 min, 40 % chance the relief crew is late and you lose another 5 to 25 min) or Buffered Swap (40 min, guaranteed on-time).</li>
+          <li><strong>MEL decision</strong> – Fix Now (add 20 min and $300) or Defer (0 min now, but there is a 40 % chance a compliance audit later fines you $1,000).</li>
+          <li><strong>Flight Event</strong> – A weather, wildlife, or equipment surprise adds the delay shown in the banner.</li>
+          <li>Click <strong>Submit Decision</strong> to update all systems, see the timeline, and start the next flight.</li>
+        </ul>
+        ''',
         unsafe_allow_html=True
     )
-    # Remaining bullets
-    st.write("- Flight Event – A weather, wildlife, or equipment surprise adds the delay shown in the banner.")
-    st.write("- Click Submit Decision to update all systems, see the timeline, and start the next flight.")
     st.subheader("Acronym Glossary")
     st.write("AODB – Airport Operational Data Base")
     st.write("CRS  – Crew Rostering System")
@@ -196,7 +194,7 @@ with tab_play:
         pw = st.text_input("Password", type="password")
         if pw == INSTRUCTOR_PW:
             if st.button("Next Flight"):
-                st.session_state.round     = min(st.session_state.round+1, ROUNDS)
+                st.session_state.round     = min(st.session_state.round+1,ROUNDS)
                 st.session_state.role_pick = ROLES[0]
                 st.rerun()
             if st.button("Reset Game"):
