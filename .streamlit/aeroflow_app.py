@@ -152,7 +152,7 @@ def main():
     st.set_page_config(
         page_title="Flight Turn Simulation", page_icon="🛫", layout="wide"
     )
-    st.title("🛫 Flight-Turn MIS Simulation")
+    st.title("🛫 MMIS 494 Flight-Turn Simulation")
     init_state()
 
     tab_how, tab_play = st.tabs(["How to Play", "Simulation"])
